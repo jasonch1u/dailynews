@@ -56,12 +56,6 @@ def main():
     st.title("📰 每日新聞 AI 摘要服務")
     st.write("點擊下方按鈕，自動抓取 **Anduril**, **BlockTempo**, **鉅亨網** 的最新新聞並生成重點摘要。")
 
-    # 側邊欄設定
-    with st.sidebar:
-        st.header("⚙️ 設定")
-        user_api_key = st.text_input("Gemini API Key", value=API_KEY, type="password")
-        st.caption("預設使用程式碼中的 Key，您也可以在此暫時替換。")
-
     if st.button("🚀 開始抓取並生成摘要", type="primary"):
         all_data = []
         status_text = st.empty() # 建立一個空區塊用來顯示狀態
@@ -98,7 +92,7 @@ def main():
         full_text = "\n".join(all_data)
         
         # 直接將 Key 傳入函式，避免使用 global 造成 SyntaxError
-        summary = summarize_news(full_text, user_api_key)
+        summary = summarize_news(full_text, API_KEY)
         progress_bar.progress(100)
         status_text.success("✅ 處理完成！")
 
