@@ -11,7 +11,7 @@ from scrapers import fetch_anduril_tw, fetch_blocktempo, fetch_cnyes_stock
 load_dotenv()
 
 # 優先從環境變數讀取 Key，若無則使用預設值 (建議在 .env 中設定)
-API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyA99xYc2KGaG0W8pzkor4NUW5YtiVFIa5E")
+API_KEY = os.getenv("GEMINI_API_KEY")
 
 # ================= AI 摘要功能 =================
 
