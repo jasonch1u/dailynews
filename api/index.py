@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 import aiohttp
 import os
 import asyncio
@@ -82,8 +82,6 @@ async def generate_summary(text: str, api_key: str):
 
 @app.get("/api/summarize")
 @app.get("/summarize")
-@app.get("/")
-@app.get("")
 async def summarize_news_endpoint():
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -109,6 +107,18 @@ async def summarize_news_endpoint():
         raise HTTPException(status_code=504, detail="Scraping timed out.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/")
+@app.get("")
+async def serve_root():
+    """Serve the static index.html file"""
+    try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        file_path = os.path.join(base_dir, "public", "index.html")
+        with open(file_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except Exception as e:
+        return HTMLResponse(content=f"<h1>Error loading frontend: {e}</h1>", status_code=500)
 
 @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def catch_all(request: Request, full_path: str):
