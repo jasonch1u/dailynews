@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import google.generativeai as genai
+import aiohttp
 import os
 import asyncio
 from dotenv import load_dotenv
@@ -22,14 +22,24 @@ app.add_middleware(
 )
 
 async def generate_summary(text: str, api_key: str):
-    """Call Google Gemini API to summarize the news"""
+    """Call Google Gemini API via REST to summarize the news"""
     if not api_key:
         raise ValueError("API Key is missing")
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    # Use the REST API to avoid heavy dependencies like grpcio
+    # Assuming user wants gemini-2.5-flash as per their original code,
+    # but strictly speaking, common models are gemini-1.5-flash or gemini-2.0-flash-exp.
+    # We will use the model string from their original code: gemini-2.5-flash
+    # If this model does not exist, it will 404.
+    # To be safe, let's try to use a very standard recent model if 2.5 is not real,
+    # but the user had it in their code, so we trust it or they might have an alias/preview.
+    # However, to avoid breakage if 2.5 is a typo, we might want to fallback or use a known one?
+    # No, stick to user's intent.
 
-    prompt = f"""
+    model_name = "gemini-2.5-flash"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+
+    prompt_text = f"""
     你是一個專業的新聞編輯。請根據以下抓取到的新聞標題和連結，
     整理出一份「每日新聞熱點摘要」。
 
@@ -45,12 +55,30 @@ async def generate_summary(text: str, api_key: str):
     6. 文末請列出「原始新聞列表」，每一行格式為：- [出處] [標題](連結)
     """
 
-    # Run synchronous generation in a separate thread to avoid blocking the event loop
+    payload = {
+        "contents": [{
+            "parts": [{"text": prompt_text}]
+        }]
+    }
+
     try:
-        response = await asyncio.to_thread(model.generate_content, prompt)
-        return response.text
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers={"Content-Type": "application/json"}) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    return f"AI API Error ({response.status}): {error_text}"
+
+                data = await response.json()
+
+                # Extract text from response
+                # Response structure: candidates[0].content.parts[0].text
+                try:
+                    return data["candidates"][0]["content"]["parts"][0]["text"]
+                except (KeyError, IndexError):
+                    return "Error parsing AI response: Unexpected format."
+
     except Exception as e:
-        return f"AI 摘要生成失敗: {e}"
+        return f"AI Request Failed: {e}"
 
 @app.get("/api/summarize")
 async def summarize_news_endpoint():
@@ -78,6 +106,3 @@ async def summarize_news_endpoint():
         raise HTTPException(status_code=504, detail="Scraping timed out.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-# Vercel entry point
-# Vercel looks for `app` in the module.
