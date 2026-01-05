@@ -21,21 +21,191 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Embedded Frontend HTML to ensure serverless compatibility (avoids file path issues)
+HTML_CONTENT = r"""<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日新聞 AI 摘要</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📰</text></svg>">
+    <!-- Use marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        h1 {
+            color: #2c3e50;
+        }
+        .controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #0d6efd;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0b5ed7;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        #status {
+            text-align: center;
+            margin: 10px 0;
+            font-weight: bold;
+            color: #666;
+            min-height: 24px;
+        }
+        #content {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            line-height: 1.6;
+        }
+        #content a {
+            color: #0d6efd;
+            text-decoration: none;
+        }
+        #content a:hover {
+            text-decoration: underline;
+        }
+        .download-btn {
+            display: none; /* Hidden by default */
+            margin-top: 20px;
+            background-color: #198754;
+        }
+        .download-btn:hover {
+            background-color: #157347;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #0d6efd;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📰 每日新聞 AI 摘要服務</h1>
+        <p>自動抓取 Anduril, BlockTempo, 鉅亨網 的最新新聞並生成重點摘要。</p>
+    </header>
+
+    <div class="controls">
+        <button id="generateBtn" onclick="generateSummary()">🚀 開始抓取並生成摘要</button>
+        <div id="status"></div>
+    </div>
+
+    <div id="content">
+        <p style="text-align: center; color: #888;">點擊上方按鈕開始生成...</p>
+    </div>
+
+    <div style="text-align: center;">
+        <button id="downloadBtn" class="download-btn" onclick="downloadMarkdown()">📥 下載 Markdown 報告</button>
+    </div>
+
+    <script>
+        let currentMarkdown = "";
+
+        async function generateSummary() {
+            const btn = document.getElementById('generateBtn');
+            const status = document.getElementById('status');
+            const content = document.getElementById('content');
+            const downloadBtn = document.getElementById('downloadBtn');
+
+            btn.disabled = true;
+            downloadBtn.style.display = 'none';
+            status.innerHTML = '<span class="loader"></span> 正在抓取新聞並進行 AI 摘要，這可能需要幾秒鐘...';
+            content.innerHTML = '';
+
+            try {
+                // Determine API URL based on environment (Vercel or local)
+                // In Vercel, relative path /api/summarize works if served from same domain
+                const response = await fetch('/api/summarize');
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.markdown) {
+                    currentMarkdown = data.markdown;
+                    content.innerHTML = marked.parse(data.markdown);
+                    status.innerHTML = '✅ 處理完成！';
+                    status.style.color = 'green';
+                    downloadBtn.style.display = 'inline-block';
+                } else {
+                    status.innerHTML = '❌ 未能生成摘要。';
+                    status.style.color = 'red';
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                status.innerHTML = `❌ 發生錯誤: ${error.message}`;
+                status.style.color = 'red';
+                content.innerHTML = `<p style="color: red;">請求失敗，請稍後再試。<br>錯誤訊息: ${error.message}</p>`;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function downloadMarkdown() {
+            if (!currentMarkdown) return;
+
+            const date = new Date().toISOString().split('T')[0];
+            const filename = `Daily_News_${date}.md`;
+
+            const blob = new Blob([currentMarkdown], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>"""
+
 async def generate_summary(text: str, api_key: str):
     """Call Google Gemini API via REST to summarize the news"""
     if not api_key:
         raise ValueError("API Key is missing")
 
     # Use the REST API to avoid heavy dependencies like grpcio
-    # Assuming user wants gemini-2.5-flash as per their original code,
-    # but strictly speaking, common models are gemini-1.5-flash or gemini-2.0-flash-exp.
-    # We will use the model string from their original code: gemini-2.5-flash
-    # If this model does not exist, it will 404.
-    # To be safe, let's try to use a very standard recent model if 2.5 is not real,
-    # but the user had it in their code, so we trust it or they might have an alias/preview.
-    # However, to avoid breakage if 2.5 is a typo, we might want to fallback or use a known one?
-    # No, stick to user's intent.
-
     model_name = "gemini-2.5-flash"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
@@ -111,14 +281,8 @@ async def summarize_news_endpoint():
 @app.get("/")
 @app.get("")
 async def serve_root():
-    """Serve the static index.html file"""
-    try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        file_path = os.path.join(base_dir, "public", "index.html")
-        with open(file_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    except Exception as e:
-        return HTMLResponse(content=f"<h1>Error loading frontend: {e}</h1>", status_code=500)
+    """Serve the embedded index.html directly"""
+    return HTMLResponse(content=HTML_CONTENT)
 
 @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def catch_all(request: Request, full_path: str):
