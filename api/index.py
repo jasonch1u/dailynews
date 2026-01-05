@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import aiohttp
@@ -107,3 +107,12 @@ async def summarize_news_endpoint():
         raise HTTPException(status_code=504, detail="Scraping timed out.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def catch_all(request: Request, full_path: str):
+    return {
+        "detail": "Debug: Route not found (Caught by catch-all)",
+        "received_path": full_path,
+        "base_url": str(request.base_url),
+        "headers": dict(request.headers),
+    }
