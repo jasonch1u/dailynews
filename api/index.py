@@ -81,6 +81,7 @@ async def generate_summary(text: str, api_key: str):
         return f"AI Request Failed: {e}"
 
 @app.get("/api/summarize")
+@app.get("/summarize")
 async def summarize_news_endpoint():
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:

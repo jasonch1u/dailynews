@@ -15,7 +15,7 @@ HEADERS = {
 async def fetch_url(session, url):
     """Async fetch url"""
     try:
-        async with session.get(url, headers=HEADERS, timeout=10) as response:
+        async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as response:
             if response.status == 200:
                 return await response.text()
     except Exception as e:
