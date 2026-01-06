@@ -143,6 +143,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         }
         #articleList h3 { margin-top: 0; color: #495057; font-size: 1.1em; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; }
+
+        #articleListContent {
+            /* Fix alignment */
+            text-align: left;
+        }
+
         .article-item {
             padding: 10px 0;
             border-bottom: 1px solid #f1f3f5;
@@ -224,7 +230,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <!-- Raw Article List -->
         <div id="articleList">
             <h3>📑 原始文章列表</h3>
-            <div id="articleListContent" style="color: #999; font-size: 0.9em; text-align: center;">
+            <div id="articleListContent" style="color: #999; font-size: 0.9em;">
                 (尚無資料)
             </div>
         </div>
@@ -252,12 +258,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     select.innerHTML = ''; // Clear "Loading..."
 
                     let hasHistory = data.dates && data.dates.length > 0;
-
-                    // Add "Live / Today" option explicitly?
-                    // User wants default to be LATEST date.
-                    // If history exists, dates[0] is latest.
-                    // But we might want a "Force Live Update" option?
-                    // Let's stick to the user request: Default show latest date.
 
                     if (hasHistory) {
                         data.dates.forEach(date => {
@@ -302,13 +302,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             // 2. Fetch Article List immediately
             await loadArticlesList(date);
 
-            // 3. Fetch Summary automatically if date is present (User experience: open page -> see content)
-            // But we should probably wait for user to click button for "Live"?
-            // User said: "預設打開網頁或是選擇日期時，幫我載入最新或是選擇日期的資料庫文章"
-            // "這段不用透過AI協助，直接從資料庫抓取即可"
-            // So: Load Articles -> YES. Load AI Summary -> Optional/Button?
-            // "預設顯示'日期'為最新日期" implies seeing the state of that day.
-            // Let's AUTO load summary if it's a history date (cached).
+            // 3. Fetch Summary automatically if date is present
             if (date) {
                fetchSummary(true); // pass flag to indicate auto-load
             }
@@ -328,13 +322,23 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                         let html = '';
                         data.articles.forEach(art => {
                             let sourceColor = '#6c757d';
-                            if(art.source.toLowerCase().includes('cnyes')) sourceColor = '#dc3545';
-                            if(art.source.toLowerCase().includes('blocktempo')) sourceColor = '#fd7e14';
-                            if(art.source.toLowerCase().includes('anduril')) sourceColor = '#0d6efd';
+                            let displaySource = art.source;
+
+                            // Map source names for display
+                            if(art.source.toLowerCase().includes('cnyes')) {
+                                sourceColor = '#dc3545';
+                            }
+                            if(art.source.toLowerCase().includes('blocktempo')) {
+                                sourceColor = '#fd7e14';
+                                displaySource = '動區'; // Map BlockTempo to 動區
+                            }
+                            if(art.source.toLowerCase().includes('anduril')) {
+                                sourceColor = '#0d6efd';
+                            }
 
                             html += `
                             <div class="article-item">
-                                <span class="article-source" style="background:${sourceColor}">${art.source}</span>
+                                <span class="article-source" style="background:${sourceColor}">${displaySource}</span>
                                 <a href="${art.url}" class="article-link" target="_blank">${art.title}</a>
                             </div>`;
                         });
