@@ -171,8 +171,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             min-height: 300px;
         }
         #content h2 { border-bottom: 2px solid #f1f3f5; padding-bottom: 10px; margin-top: 30px; }
-        #content h3 { color: #495057; margin-top: 20px; }
+        #content h3 { color: #495057; margin-top: 25px; margin-bottom: 15px; }
         #content p { margin-bottom: 15px; }
+        #content ul { padding-left: 20px; }
+        #content li { margin-bottom: 8px; }
         #content a { color: var(--primary-color); text-decoration: none; }
         #content a:hover { text-decoration: underline; }
 
@@ -281,7 +283,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         renderer.link = function(href, title, text) {
             return `<a href="${href}" title="${title || ''}" target="_blank" rel="noopener noreferrer">${text}</a>`;
         };
-        marked.setOptions({ renderer: renderer });
+        // Enable breaks: true to convert single newlines to <br>
+        marked.setOptions({
+            renderer: renderer,
+            breaks: true,
+            gfm: true
+        });
 
         window.addEventListener('DOMContentLoaded', async () => {
             await loadHistoryDates();
