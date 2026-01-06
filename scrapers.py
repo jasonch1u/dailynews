@@ -101,11 +101,12 @@ async def process_article_link(session, db, title, link, source, content_selecto
 
     return None
 
-async def fetch_rss_feed(session, db, url, source_name, translate=False):
+async def fetch_rss_feed(session, db, url, source_name, translate=False, allow_empty_content=False):
     """
     Generic RSS Fetcher.
     Fetches RSS XML, parses items, checks DB, returns formatted string.
     translate: If True, translates titles to Traditional Chinese.
+    allow_empty_content: If True, uses title as content if description is missing (e.g. SeekingAlpha).
     """
     articles = []
     new_items = [] # (title, link, content) to be saved
@@ -137,6 +138,10 @@ async def fetch_rss_feed(session, db, url, source_name, translate=False):
                 description = item.description.text.strip() if item.description else ""
                 desc_soup = BeautifulSoup(description, 'html.parser')
                 content = desc_soup.get_text().strip()
+
+                # Fallback for empty content (e.g. SeekingAlpha)
+                if not content and allow_empty_content and title:
+                    content = title
 
                 if content and link:
                     new_items.append({"title": title, "link": link, "content": content})
@@ -181,7 +186,8 @@ async def fetch_anduril_tw(session, db=None):
                 link = link_tag.get('href')
                 if not link.startswith('http'): link = url + link if link.startswith('/') else url + '/' + link
                 if not any(x in link for x in ["tag", "category", "author"]):
-                    tasks.append(process_article_link(session, db, title, link, "Anduril", "section.gh-content", False))
+                    # Changed source name to FOX per request
+                    tasks.append(process_article_link(session, db, title, link, "FOX", "section.gh-content", False))
     return [x for x in await asyncio.gather(*tasks) if x]
 
 async def fetch_blocktempo(session, db=None):
@@ -197,7 +203,8 @@ async def fetch_blocktempo(session, db=None):
                 title = a.get('title') or a.text.strip()
                 link = a.get('href')
                 if len(title) > 5:
-                    tasks.append(process_article_link(session, db, title, link, "BlockTempo", ".entry-content", True))
+                    # Changed source name to 動區 per request
+                    tasks.append(process_article_link(session, db, title, link, "動區", ".entry-content", True))
     return [x for x in await asyncio.gather(*tasks) if x]
 
 async def fetch_cnyes_stock(session, db=None):
@@ -219,8 +226,8 @@ async def fetch_cnyes_stock(session, db=None):
                 link = item.link.text.strip() if item.link else ""
                 if not link and item.guid: link = item.guid.text.strip()
 
-                # Filter out "鉅亨速報"
-                if "鉅亨速報" in title:
+                # Filter out "鉅亨速報" and "盤中速報"
+                if "鉅亨速報" in title or "盤中速報" in title:
                     continue
 
                 if link and title:
@@ -240,7 +247,9 @@ async def fetch_cnbc(session, db=None):
     return await fetch_rss_feed(session, db, "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", "CNBC", translate=True)
 
 async def fetch_seeking_alpha(session, db=None):
-    return await fetch_rss_feed(session, db, "https://seekingalpha.com/market_currents.xml", "SeekingAlpha", translate=True)
+    # SeekingAlpha RSS has empty descriptions and blocks scraping content.
+    # We enable allow_empty_content=True to use the Title as the content, so the AI at least sees the headlines.
+    return await fetch_rss_feed(session, db, "https://seekingalpha.com/market_currents.xml", "SeekingAlpha", translate=True, allow_empty_content=True)
 
 async def fetch_marketwatch(session, db=None):
     return await fetch_rss_feed(session, db, "https://feeds.content.dowjones.io/public/rss/mw_topstories", "MarketWatch", translate=True)

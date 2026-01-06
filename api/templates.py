@@ -195,6 +195,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         #content .source-cnbc { background: #20c997; }
         #content .source-seekingalpha { background: #ffc107; color: #333 !important; }
         #content .source-marketwatch { background: #6610f2; }
+        /* Add new source names just in case, or map old classes to new names if using regex replacement */
+        #content .source-fox { background: #0d6efd; }
 
         /* Article List Sidebar */
         #articleList {
@@ -264,8 +266,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <div class="source-dropdown">
                 <div class="source-btn">📡 來源篩選 ▼</div>
                 <div class="source-content source-checkboxes">
-                    <label><input type="checkbox" value="anduril" checked> Anduril</label>
-                    <label><input type="checkbox" value="blocktempo" checked> BlockTempo</label>
+                    <label><input type="checkbox" value="anduril" checked> FOX</label>
+                    <label><input type="checkbox" value="blocktempo" checked> 動區</label>
                     <label><input type="checkbox" value="cnyes" checked> 鉅亨網</label>
                     <hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
                     <label><input type="checkbox" value="cnbc" checked> CNBC (World)</label>
@@ -387,11 +389,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                             let sourceColor = '#6c757d';
                             let displaySource = art.source;
 
-                            // Map source names
+                            // Map source names for display and color
                             const s = art.source.toLowerCase();
                             if(s.includes('cnyes')) sourceColor = '#dc3545';
                             else if(s.includes('blocktempo')) { sourceColor = '#fd7e14'; displaySource = '動區'; }
-                            else if(s.includes('anduril')) sourceColor = '#0d6efd';
+                            else if(s.includes('anduril')) { sourceColor = '#0d6efd'; displaySource = 'FOX'; }
+                            else if(s.includes('fox')) { sourceColor = '#0d6efd'; displaySource = 'FOX'; }
                             else if(s.includes('cnbc')) sourceColor = '#20c997';
                             else if(s.includes('seekingalpha')) sourceColor = '#ffc107';
                             else if(s.includes('marketwatch')) sourceColor = '#6610f2';
@@ -427,7 +430,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 const s = src.toLowerCase();
                 if(s.includes('cnyes') || s.includes('鉅亨')) return 'source-cnyes';
                 if(s.includes('blocktempo') || s.includes('動區')) return 'source-blocktempo';
-                if(s.includes('anduril')) return 'source-anduril';
+                if(s.includes('anduril') || s.includes('fox')) return 'source-anduril'; // Re-use blue style
                 if(s.includes('cnbc')) return 'source-cnbc';
                 if(s.includes('seeking') || s.includes('alpha')) return 'source-seekingalpha';
                 if(s.includes('marketwatch')) return 'source-marketwatch';
