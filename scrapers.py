@@ -67,12 +67,23 @@ async def process_article_link(session, db, title, link, source, content_selecto
             if check_date:
                 # Basic check for meta tags
                 is_valid = False
+                # 1. Check Meta Tags
                 for meta_prop in ['article:published_time', 'og:updated_time', 'datePublished']:
                     meta = soup.find('meta', property=meta_prop) or soup.find('meta', itemprop=meta_prop)
                     if meta and meta.get('content'):
                         c = meta.get('content')
                         if ("T" in c and is_today_tw(c)) or c.startswith(get_today_str()):
                             is_valid = True; break
+
+                # 2. Check <time> tag (Common in modern sites like Cnyes, Anduril)
+                if not is_valid:
+                    time_tags = soup.find_all('time')
+                    for t in time_tags:
+                         datetime_val = t.get('datetime')
+                         if datetime_val:
+                              if ("T" in datetime_val and is_today_tw(datetime_val)) or datetime_val.startswith(get_today_str()):
+                                   is_valid = True; break
+
                 if not is_valid: return None
 
             container = soup.select_one(content_selector) if content_selector else soup.find('main')
