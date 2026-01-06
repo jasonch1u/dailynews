@@ -103,9 +103,13 @@ async def fetch_rss_feed(session, db, url, source_name):
     try:
         xml = await fetch_url_with_retry(session, url)
         if xml:
-            soup = BeautifulSoup(xml, 'xml') # Use xml parser if available, or html.parser handles standard tags
+            try:
+                soup = BeautifulSoup(xml, 'xml') # Use xml parser if available
+            except Exception:
+                soup = BeautifulSoup(xml, 'html.parser') # Fallback if lxml is missing or fails
+
             if not soup.find('item'):
-                soup = BeautifulSoup(xml, 'html.parser') # Fallback
+                soup = BeautifulSoup(xml, 'html.parser') # Double check with html.parser if xml failed to find items
 
             items = soup.find_all('item')
             for item in items[:5]: # Top 5

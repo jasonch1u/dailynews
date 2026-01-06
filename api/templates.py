@@ -336,11 +336,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                             select.appendChild(opt);
                         });
 
-                        // Default to latest history date if available (User requested "default load latest cache")
+                        // Default to latest history date if available
                         select.value = data.dates[0];
                         handleDateChange();
                     } else {
-                        // Default to Live
+                        // Default to Live only if no history
                         select.value = "";
                         handleDateChange();
                     }
