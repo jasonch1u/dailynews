@@ -219,6 +219,10 @@ async def fetch_cnyes_stock(session, db=None):
                 link = item.link.text.strip() if item.link else ""
                 if not link and item.guid: link = item.guid.text.strip()
 
+                # Filter out "鉅亨速報"
+                if "鉅亨速報" in title:
+                    continue
+
                 if link and title:
                     # We still fetch the full article content using process_article_link
                     # This ensures we get the full text, not just the RSS summary
