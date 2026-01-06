@@ -7,26 +7,31 @@ class SupabaseClient:
         self.supabase_url = os.getenv("SUPABASE_URL")
         self.supabase_key = os.getenv("SUPABASE_KEY")
 
-        # Check if config is present, but don't crash if missing (graceful degradation)
-        self.is_configured = bool(self.supabase_url and self.supabase_key)
+        # Check configuration explicitly for debugging
+        self.is_configured = True
+        if not self.supabase_url:
+            print("❌ Error: SUPABASE_URL environment variable is missing.")
+            self.is_configured = False
+        if not self.supabase_key:
+            print("❌ Error: SUPABASE_KEY environment variable is missing.")
+            self.is_configured = False
 
         if self.is_configured:
+            print(f"✅ Supabase Client configured for URL: {self.supabase_url[:8]}...")
             # Normalize URL to ensure no trailing slash
             self.base_url = self.supabase_url.rstrip('/')
             self.headers = {
                 "apikey": self.supabase_key,
                 "Authorization": f"Bearer {self.supabase_key}",
                 "Content-Type": "application/json",
-                "Prefer": "return=minimal" # For inserts, we don't need the object back usually
+                "Prefer": "return=minimal"
             }
 
     async def get_summary_by_date(self, date_str: str) -> str:
         """
         Fetch summary for a specific date (YYYY-MM-DD).
-        Returns None if not found or not configured.
         """
         if not self.is_configured:
-            print("Supabase not configured, skipping cache check.")
             return None
 
         url = f"{self.base_url}/rest/v1/news_summaries"
@@ -44,7 +49,7 @@ class SupabaseClient:
                             print(f"Cache HIT for {date_str}")
                             return data[0].get("content")
                     else:
-                        print(f"Supabase Read Error: {response.status} - {await response.text()}")
+                        await self.log_error("db:read", f"Status {response.status}: {await response.text()}")
         except Exception as e:
             print(f"Supabase Connection Failed: {e}")
 
@@ -54,12 +59,8 @@ class SupabaseClient:
     async def save_summary(self, date_str: str, content: str):
         """
         Save the summary to the database.
-        Uses upsert logic (insert on conflict update) if possible,
-        but standard REST 'POST' is Insert.
-        To do upsert via REST, we add 'Prefer: resolution=merge-duplicates' header.
         """
         if not self.is_configured:
-            print("Supabase not configured, skipping save.")
             return
 
         url = f"{self.base_url}/rest/v1/news_summaries"
@@ -78,6 +79,54 @@ class SupabaseClient:
                     if response.status in [200, 201, 204]:
                         print(f"Successfully saved summary for {date_str}")
                     else:
-                        print(f"Supabase Write Error: {response.status} - {await response.text()}")
+                        await self.log_error("db:write", f"Status {response.status}: {await response.text()}")
         except Exception as e:
             print(f"Supabase Save Failed: {e}")
+
+    async def get_available_dates(self):
+        """
+        Get a list of dates that have summaries.
+        Returns a list of strings ["2024-05-20", "2024-05-19", ...]
+        """
+        if not self.is_configured:
+            return []
+
+        url = f"{self.base_url}/rest/v1/news_summaries"
+        params = {
+            "select": "date",
+            "order": "date.desc"
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=self.headers, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return [item['date'] for item in data]
+                    else:
+                        await self.log_error("db:history", f"Status {response.status}: {await response.text()}")
+        except Exception as e:
+             print(f"Supabase History Fetch Failed: {e}")
+
+        return []
+
+    async def log_error(self, source: str, message: str):
+        """
+        Log an error to the error_logs table.
+        """
+        if not self.is_configured:
+            print(f"[Local Log] {source}: {message}")
+            return
+
+        url = f"{self.base_url}/rest/v1/error_logs"
+        payload = {
+            "source": source,
+            "message": str(message)[:1000] # Truncate if too long
+        }
+
+        try:
+            # Fire and forget-ish (we await but catch all)
+            async with aiohttp.ClientSession() as session:
+                await session.post(url, headers=self.headers, json=payload)
+        except Exception as e:
+            print(f"Failed to log error to Supabase: {e}")

@@ -21,14 +21,33 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         }
         header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
         }
         h1 {
             color: #2c3e50;
+            margin-bottom: 10px;
         }
         .controls {
-            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
             margin-bottom: 20px;
+        }
+        .action-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+        }
+        select {
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 4px;
+            border: 1px solid #ced4da;
+            background-color: white;
+            min-width: 150px;
         }
         button {
             background-color: #0d6efd;
@@ -91,6 +110,15 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .date-badge {
+            display: inline-block;
+            background: #e9ecef;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            color: #495057;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -100,12 +128,22 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     </header>
 
     <div class="controls">
-        <button id="generateBtn" onclick="generateSummary()">🚀 開始抓取並生成摘要</button>
+        <div class="action-row">
+             <button id="generateBtn" onclick="fetchSummary()">🚀 生成/查看今日摘要</button>
+        </div>
+
+        <div class="action-row">
+            <label for="historySelect">📅 歷史回顧：</label>
+            <select id="historySelect" onchange="loadHistory()">
+                <option value="">-- 載入中 --</option>
+            </select>
+        </div>
+
         <div id="status"></div>
     </div>
 
     <div id="content">
-        <p style="text-align: center; color: #888;">點擊上方按鈕開始生成...</p>
+        <p style="text-align: center; color: #888;">點擊按鈕查看摘要...</p>
     </div>
 
     <div style="text-align: center;">
@@ -114,8 +152,42 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     <script>
         let currentMarkdown = "";
+        let currentDate = "";
 
-        async function generateSummary() {
+        // Load history dates on page load
+        window.addEventListener('DOMContentLoaded', async () => {
+            const select = document.getElementById('historySelect');
+            try {
+                const response = await fetch('/api/history');
+                if (response.ok) {
+                    const data = await response.json();
+                    select.innerHTML = '<option value="">-- 選擇日期 --</option>';
+                    if (data.dates && data.dates.length > 0) {
+                        data.dates.forEach(date => {
+                            const option = document.createElement('option');
+                            option.value = date;
+                            option.text = date;
+                            select.appendChild(option);
+                        });
+                    } else {
+                        select.innerHTML = '<option value="">-- 尚無歷史資料 --</option>';
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load history", e);
+                select.innerHTML = '<option value="">-- 無法載入歷史 --</option>';
+            }
+        });
+
+        async function loadHistory() {
+            const select = document.getElementById('historySelect');
+            const date = select.value;
+            if (date) {
+                fetchSummary(date);
+            }
+        }
+
+        async function fetchSummary(targetDate = null) {
             const btn = document.getElementById('generateBtn');
             const status = document.getElementById('status');
             const content = document.getElementById('content');
@@ -123,13 +195,25 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
             btn.disabled = true;
             downloadBtn.style.display = 'none';
-            status.innerHTML = '<span class="loader"></span> 正在抓取新聞並進行 AI 摘要，這可能需要幾秒鐘...';
+
+            let statusMsg = targetDate ? `正在載入 ${targetDate} 的摘要...` : '正在抓取新聞並進行 AI 摘要，這可能需要幾秒鐘...';
+            status.innerHTML = `<span class="loader"></span> ${statusMsg}`;
             content.innerHTML = '';
 
             try {
-                // Determine API URL based on environment (Vercel or local)
-                // In Vercel, relative path /api/summarize works if served from same domain
-                const response = await fetch('/api/summarize');
+                let url = '/api/summarize';
+                if (targetDate) {
+                    url += `?date=${targetDate}`;
+                }
+
+                const response = await fetch(url);
+
+                // Handle 404 specially
+                if (response.status === 404) {
+                     status.innerHTML = '⚠️ 查無資料';
+                     content.innerHTML = '<p style="text-align:center; color: #888;">找不到該日期的摘要資料。</p>';
+                     return;
+                }
 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -139,8 +223,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
                 if (data.markdown) {
                     currentMarkdown = data.markdown;
+                    currentDate = data.date || new Date().toISOString().split('T')[0];
                     content.innerHTML = marked.parse(data.markdown);
-                    status.innerHTML = '✅ 處理完成！';
+                    status.innerHTML = `✅ ${currentDate} 摘要載入完成！`;
                     status.style.color = 'green';
                     downloadBtn.style.display = 'inline-block';
                 } else {
@@ -161,8 +246,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         function downloadMarkdown() {
             if (!currentMarkdown) return;
 
-            const date = new Date().toISOString().split('T')[0];
-            const filename = `Daily_News_${date}.md`;
+            const filename = `Daily_News_${currentDate}.md`;
 
             const blob = new Blob([currentMarkdown], { type: 'text/markdown' });
             const url = URL.createObjectURL(blob);

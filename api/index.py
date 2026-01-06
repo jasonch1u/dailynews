@@ -30,6 +30,18 @@ db = SupabaseClient()
 # Taiwan Timezone for consistency
 TZ_TW = timezone(timedelta(hours=8))
 
+# Debug Logging on Startup
+print("--- Server Startup ---")
+print(f"Supabase Configured: {db.is_configured}")
+if db.is_configured:
+    print(f"Supabase URL: {db.supabase_url[:10]}... (Masked)")
+else:
+    print("WARNING: Supabase is NOT configured. Caching and History will be disabled.")
+    # Log specifically which one is missing for Vercel logs
+    if not os.getenv("SUPABASE_URL"): print("Missing Env: SUPABASE_URL")
+    if not os.getenv("SUPABASE_KEY"): print("Missing Env: SUPABASE_KEY")
+print("----------------------")
+
 async def generate_summary(text: str, api_key: str):
     """Call Google Gemini API via REST to summarize the news"""
     if not api_key:
@@ -66,65 +78,84 @@ async def generate_summary(text: str, api_key: str):
             async with session.post(url, json=payload, headers={"Content-Type": "application/json"}) as response:
                 if response.status != 200:
                     error_text = await response.text()
+                    await db.log_error("api:gemini", f"Status {response.status}: {error_text}")
                     return f"AI API Error ({response.status}): {error_text}"
 
                 data = await response.json()
 
-                # Extract text from response
-                # Response structure: candidates[0].content.parts[0].text
                 try:
                     return data["candidates"][0]["content"]["parts"][0]["text"]
                 except (KeyError, IndexError):
+                    await db.log_error("api:gemini", "Unexpected format: " + str(data))
                     return "Error parsing AI response: Unexpected format."
 
     except Exception as e:
+        await db.log_error("api:gemini", str(e))
         return f"AI Request Failed: {e}"
+
+@app.get("/api/history")
+async def get_history_dates():
+    """Return a list of dates that have summaries available."""
+    dates = await db.get_available_dates()
+    return {"dates": dates}
 
 @app.get("/api/summarize")
 @app.get("/summarize")
-async def summarize_news_endpoint():
-    try:
-        # 0. Check Cache (Supabase)
-        today_str = datetime.now(TZ_TW).strftime("%Y-%m-%d")
-        cached_summary = await db.get_summary_by_date(today_str)
+async def summarize_news_endpoint(date: str = None):
+    """
+    Get news summary.
+    If 'date' param is provided (YYYY-MM-DD), fetch that specific day from cache.
+    If 'date' is NOT provided (or is today), try cache -> otherwise scrape & generate.
+    """
+    today_str = datetime.now(TZ_TW).strftime("%Y-%m-%d")
+    target_date = date if date else today_str
 
+    # 1. Check Cache (Supabase)
+    try:
+        cached_summary = await db.get_summary_by_date(target_date)
         if cached_summary:
-            return JSONResponse(content={"markdown": cached_summary, "source": "cache"})
+            return JSONResponse(content={"markdown": cached_summary, "source": "cache", "date": target_date})
+
+        # If user requested a PAST date and it's not in cache, we return 404 (don't scrape past)
+        if target_date != today_str:
+             return JSONResponse(status_code=404, content={"markdown": f"⚠️ 找不到 {target_date} 的歷史摘要。", "date": target_date})
+
     except Exception as e:
         print(f"Cache check failed: {e}")
-        # Continue to generation if cache check fails
+        # Continue to generation ONLY if it's today
+        if target_date != today_str:
+            raise HTTPException(status_code=500, detail="Database Error during history fetch.")
 
+    # 2. Check API Key (Only needed for generation)
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="Server Error: GEMINI_API_KEY is not set.")
 
     try:
-        # 1. Run Scrapers concurrently
-        # We set a timeout for the scraping part to ensure it doesn't hang forever
-        # Vercel limit is strict, so we try to be fast.
-        articles = await asyncio.wait_for(run_all_scrapers(), timeout=25.0) # Increased timeout slightly
+        # 3. Run Scrapers concurrently
+        # Pass db.log_error as the logger
+        articles = await asyncio.wait_for(run_all_scrapers(db.log_error), timeout=25.0)
 
         if not articles:
-            return JSONResponse(content={"markdown": "⚠️ 沒有抓取到任何有效的新聞資料。請稍後再試。"})
+            await db.log_error("scraper:all", "No articles found")
+            return JSONResponse(content={"markdown": "⚠️ 沒有抓取到任何有效的新聞資料。請稍後再試。", "date": today_str})
 
         full_text = "\n".join(articles)
 
-        # 2. AI Summary
+        # 4. AI Summary
         summary = await generate_summary(full_text, api_key)
 
-        # 3. Save to Cache
-        # Only save if it looks like a valid summary (not an error message)
+        # 5. Save to Cache
         if "AI API Error" not in summary and "AI Request Failed" not in summary:
-             # Run in background to not block response?
-             # On Vercel, background tasks might be killed if response returns.
-             # Safer to await it. It's just a quick HTTP post.
              await db.save_summary(today_str, summary)
 
-        return JSONResponse(content={"markdown": summary, "source": "live"})
+        return JSONResponse(content={"markdown": summary, "source": "live", "date": today_str})
 
     except asyncio.TimeoutError:
+        await db.log_error("scraper:main", "Timeout")
         raise HTTPException(status_code=504, detail="Scraping timed out.")
     except Exception as e:
+        await db.log_error("scraper:main", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
