@@ -14,220 +14,260 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             --bg-color: #f8f9fa;
             --card-bg: #ffffff;
             --text-color: #333;
+            --header-height: 70px;
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 20px;
+            margin: 0;
+            padding: 0;
             background-color: var(--bg-color);
             color: var(--text-color);
+            padding-top: calc(var(--header-height) + 20px); /* Space for sticky header */
         }
+
+        /* Sticky Header */
         header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: var(--header-height);
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
             border-bottom: 1px solid #dee2e6;
-        }
-        h1 { color: #2c3e50; margin-bottom: 10px; }
-
-        /* Controls Section */
-        .controls-container {
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            margin-bottom: 20px;
-        }
-
-        .control-group {
-            margin-bottom: 15px;
             display: flex;
             align-items: center;
-            justify-content: center;
-            flex-wrap: wrap;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 1000;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
             gap: 15px;
         }
 
-        .source-checkboxes {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            background: #f1f3f5;
-            padding: 8px 15px;
-            border-radius: 20px;
+        h1 {
+            font-size: 1.25rem;
+            margin: 0;
+            color: #2c3e50;
+            white-space: nowrap;
         }
-        .source-checkboxes label {
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        /* Source Dropdown (Compact) */
+        .source-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        .source-btn {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 8px 12px;
+            border-radius: 6px;
             cursor: pointer;
-            user-select: none;
+            font-size: 0.9rem;
             display: flex;
             align-items: center;
             gap: 5px;
+        }
+        .source-btn:hover { background: #e9ecef; }
+        .source-content {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0; /* Align right */
+            background-color: white;
+            min-width: 200px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+            z-index: 1001;
+            margin-top: 5px;
+        }
+        .source-dropdown:hover .source-content {
+            display: block;
+        }
+        .source-content label {
+            display: block;
+            padding: 5px 0;
+            cursor: pointer;
         }
 
         select {
             padding: 8px 12px;
             border-radius: 6px;
             border: 1px solid #ced4da;
+            font-size: 0.9rem;
         }
 
         button.primary-btn {
             background-color: var(--primary-color);
             color: white;
             border: none;
-            padding: 12px 28px;
-            font-size: 16px;
+            padding: 8px 16px;
+            font-size: 0.9rem;
             font-weight: 600;
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
             transition: all 0.2s;
-            box-shadow: 0 2px 4px rgba(13, 110, 253, 0.2);
+            white-space: nowrap;
         }
         button.primary-btn:hover {
             background-color: #0b5ed7;
-            transform: translateY(-1px);
         }
         button.primary-btn:disabled {
             background-color: #6c757d;
             cursor: not-allowed;
-            transform: none;
         }
 
-        /* Status */
+        /* Layout Grid */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+
+        @media (max-width: 900px) {
+            .main-container { grid-template-columns: 1fr; }
+            header {
+                height: auto;
+                flex-direction: column;
+                padding: 10px 20px;
+                gap: 10px;
+            }
+            body { padding-top: 140px; } /* Adjust for taller header */
+            .header-controls { flex-wrap: wrap; justify-content: center; }
+        }
+
+        /* Status Bar */
         #status {
             text-align: center;
-            margin: 15px 0;
+            margin: 10px 0 20px 0;
             font-weight: 500;
             color: #666;
             min-height: 24px;
         }
 
-        /* Layout Grid for Results */
-        .results-container {
-            display: grid;
-            grid-template-columns: 2fr 1fr; /* Summary takes more space, List takes less */
-            gap: 20px;
-            align-items: start;
-        }
-        @media (max-width: 768px) {
-            .results-container { grid-template-columns: 1fr; }
-        }
-
-        /* Summary Content */
+        /* Content Styles */
         #content {
             background: var(--card-bg);
-            padding: 40px;
+            padding: 30px;
             border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
             line-height: 1.7;
-            min-height: 200px;
+            min-height: 300px;
         }
         #content h2 { border-bottom: 2px solid #f1f3f5; padding-bottom: 10px; margin-top: 30px; }
         #content h3 { color: #495057; margin-top: 20px; }
-        #content ul { padding-left: 20px; }
-        #content li { margin-bottom: 8px; }
+        #content p { margin-bottom: 15px; }
         #content a { color: var(--primary-color); text-decoration: none; }
         #content a:hover { text-decoration: underline; }
-        #content blockquote {
-            border-left: 4px solid #ced4da;
-            margin: 0;
-            padding-left: 15px;
-            color: #6c757d;
-        }
 
         /* Article List Sidebar */
         #articleList {
             background: var(--card-bg);
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            position: sticky;
+            top: calc(var(--header-height) + 20px);
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
         }
-        #articleList h3 { margin-top: 0; color: #495057; font-size: 1.1em; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; }
-
-        #articleListContent {
-            /* Fix alignment */
-            text-align: left;
-        }
+        #articleList h3 { margin-top: 0; font-size: 1.1em; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; color: #495057; }
+        #articleListContent { text-align: left; }
 
         .article-item {
             padding: 10px 0;
             border-bottom: 1px solid #f1f3f5;
-            font-size: 0.95em;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
         }
         .article-item:last-child { border-bottom: none; }
         .article-source {
-            font-size: 0.75em;
+            font-size: 0.75rem;
             color: #fff;
-            background: #6c757d;
             padding: 2px 6px;
             border-radius: 4px;
-            margin-right: 5px;
-            vertical-align: middle;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
         .article-link {
             color: #333;
             text-decoration: none;
-            font-weight: 500;
+            line-height: 1.4;
         }
         .article-link:hover { color: var(--primary-color); }
 
         .loader {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid var(--primary-color);
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid var(--primary-color);
             border-radius: 50%;
-            width: 18px;
-            height: 18px;
+            width: 14px;
+            height: 14px;
             animation: spin 1s linear infinite;
             display: inline-block;
             vertical-align: middle;
-            margin-right: 8px;
+            margin-right: 5px;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <header>
-        <h1>📰 每日新聞 AI 摘要</h1>
-        <p>即時聚合 Anduril, BlockTempo, 鉅亨網 | 智慧分析與情緒判讀</p>
-    </header>
-
-    <div class="controls-container">
-        <!-- Sources -->
-        <div class="control-group">
-            <span>📡 來源選擇：</span>
-            <div class="source-checkboxes">
-                <label><input type="checkbox" value="anduril" checked> Anduril</label>
-                <label><input type="checkbox" value="blocktempo" checked> BlockTempo</label>
-                <label><input type="checkbox" value="cnyes" checked> 鉅亨網</label>
-            </div>
+        <div class="header-left">
+            <div style="font-size: 1.5rem;">📰</div>
+            <h1>每日新聞 AI 摘要</h1>
         </div>
 
-        <!-- History -->
-        <div class="control-group">
-            <span>📅 日期：</span>
+        <div class="header-controls">
+            <!-- Source Selector -->
+            <div class="source-dropdown">
+                <div class="source-btn">📡 來源篩選 ▼</div>
+                <div class="source-content source-checkboxes">
+                    <label><input type="checkbox" value="anduril" checked> Anduril</label>
+                    <label><input type="checkbox" value="blocktempo" checked> BlockTempo</label>
+                    <label><input type="checkbox" value="cnyes" checked> 鉅亨網</label>
+                </div>
+            </div>
+
+            <!-- Date Selector -->
             <select id="historySelect" onchange="handleDateChange()">
                 <option value="">-- 載入中 --</option>
             </select>
+
+            <!-- Generate Button -->
+            <button id="generateBtn" class="primary-btn" onclick="fetchSummary()">🚀 生成摘要</button>
         </div>
+    </header>
 
-        <!-- Action -->
-        <div class="control-group">
-             <button id="generateBtn" class="primary-btn" onclick="fetchSummary()">🚀 開始分析與摘要</button>
-        </div>
+    <div id="status"></div>
 
-        <div id="status"></div>
-    </div>
-
-    <div class="results-container">
-        <!-- AI Summary -->
+    <div class="main-container">
+        <!-- AI Summary Area -->
         <div id="content">
             <div style="text-align: center; color: #adb5bd; margin-top: 50px;">
                 <h3>👋 歡迎使用</h3>
-                <p>正在載入最新資料...</p>
+                <p>正在連線資料庫取得最新內容...</p>
             </div>
         </div>
 
-        <!-- Raw Article List -->
+        <!-- Raw Article List Sidebar -->
         <div id="articleList">
             <h3>📑 原始文章列表</h3>
             <div id="articleListContent" style="color: #999; font-size: 0.9em;">
@@ -237,8 +277,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     </div>
 
     <script>
-        // Open all links in new tab
-        // Use marked 4.3.0 syntax
         const renderer = new marked.Renderer();
         renderer.link = function(href, title, text) {
             return `<a href="${href}" title="${title || ''}" target="_blank" rel="noopener noreferrer">${text}</a>`;
@@ -255,7 +293,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 const res = await fetch('/api/history');
                 if (res.ok) {
                     const data = await res.json();
-                    select.innerHTML = ''; // Clear "Loading..."
+                    select.innerHTML = '';
 
                     let hasHistory = data.dates && data.dates.length > 0;
 
@@ -266,20 +304,13 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                             opt.text = date;
                             select.appendChild(opt);
                         });
-
-                        // Select the first one (Latest)
                         select.value = data.dates[0];
-
-                        // Trigger load for this date
                         handleDateChange();
                     } else {
-                        // No history, fallback to Live
                         const opt = document.createElement('option');
                         opt.value = "";
                         opt.text = "今日最新 (Live)";
                         select.appendChild(opt);
-
-                        // Load live/empty list
                         handleDateChange();
                     }
                 }
@@ -292,19 +323,16 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         async function handleDateChange() {
             const date = document.getElementById('historySelect').value;
 
-            // 1. Manage Checkboxes
             if (date) {
                 document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = true);
             } else {
                 document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = false);
             }
 
-            // 2. Fetch Article List immediately
             await loadArticlesList(date);
 
-            // 3. Fetch Summary automatically if date is present
             if (date) {
-               fetchSummary(true); // pass flag to indicate auto-load
+               fetchSummary(true);
             }
         }
 
@@ -324,13 +352,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                             let sourceColor = '#6c757d';
                             let displaySource = art.source;
 
-                            // Map source names for display
                             if(art.source.toLowerCase().includes('cnyes')) {
                                 sourceColor = '#dc3545';
                             }
                             if(art.source.toLowerCase().includes('blocktempo')) {
                                 sourceColor = '#fd7e14';
-                                displaySource = '動區'; // Map BlockTempo to 動區
+                                displaySource = '動區';
                             }
                             if(art.source.toLowerCase().includes('anduril')) {
                                 sourceColor = '#0d6efd';
