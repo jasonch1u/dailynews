@@ -51,7 +51,9 @@ async def generate_summary(text: str, api_key: str):
     1. **重點摘要**：請將新聞分類（例如：加密貨幣、股市金融、科技趨勢），並對每個主題進行總結。
     2. **關鍵結論 (Key Takeaways)**：在每個分類或整份報告的開頭，列出 3 點最重要的市場洞察或趨勢結論。
     3. **情緒分析**：請簡短標註該新聞對市場的影響是「正面」、「負面」或「中性」。
-    4. **引用來源**：必須在每一條摘要下方附上原始連結，格式：[閱讀全文](連結)。
+    4. **引用來源格式**：這點非常重要。請在每一條新聞摘要的結尾，另起一行顯示來源連結。
+       格式必須為： `[來源網站名稱] [新聞標題] [閱讀全文](連結)`
+       例如： `[鉅亨網] 台積電法說會重點整理 [閱讀全文](https://news.cnyes.com/...)`
     5. 語氣專業且易讀，使用繁體中文。
     6. 輸出格式請使用 Markdown。
     """
@@ -78,6 +80,14 @@ async def get_history_dates():
     dates = await db.get_available_dates()
     return {"dates": dates}
 
+@app.get("/api/articles")
+async def get_articles_endpoint(date: str):
+    """
+    Get raw list of articles for a specific date from DB.
+    """
+    articles = await db.get_articles_by_date(date)
+    return {"articles": articles}
+
 @app.get("/api/summarize")
 @app.get("/summarize")
 async def summarize_news_endpoint(
@@ -87,13 +97,12 @@ async def summarize_news_endpoint(
     """
     Get news summary.
     - date: YYYY-MM-DD (Defaults to today)
-    - sources: filter (e.g. 'cnyes,anduril'). If provided, always generates fresh summary.
+    - sources: filter (e.g. 'cnyes,anduril').
     """
     today_str = datetime.now(TZ_TW).strftime("%Y-%m-%d")
     target_date = date if date else today_str
 
     source_list = sources.split(',') if sources else ['anduril', 'blocktempo', 'cnyes']
-    # Normalize sources
     valid_sources = {'anduril', 'blocktempo', 'cnyes'}
     source_list = [s.strip().lower() for s in source_list if s.strip().lower() in valid_sources]
     if not source_list: source_list = ['anduril', 'blocktempo', 'cnyes']
@@ -109,21 +118,15 @@ async def summarize_news_endpoint(
             raise HTTPException(status_code=500, detail="DB Error")
 
     # 2. Logic for Today
-    # If sources are filtered, we always run live generation (but article content might come from cache)
-    # If default sources, we can potentially use the Daily Summary Cache IF no new articles are found?
-    # BUT, the user wants "fresh" if new articles exist.
-    # The scraping step is now fast because it only fetches HTML list + checks DB.
-    # So we can afford to ALWAYS run scrapers to check for updates.
-
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key: raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing")
 
     try:
-        # Run Scrapers (They will use DB cache for content if URL exists)
+        # Run Scrapers (Incremental check)
+        # This will populate 'articles' table
         articles = await asyncio.wait_for(run_all_scrapers(db, source_list), timeout=30.0)
 
         if not articles:
-             # If no articles found at all (rare for today), maybe return cache if exists?
              cached = await db.get_summary_by_date(target_date)
              if cached: return JSONResponse(content={"markdown": cached + "\n\n(註：目前尚未抓取到最新文章)", "source": "cache_fallback", "date": target_date})
              return JSONResponse(content={"markdown": "⚠️ 今日尚未有符合條件的新聞。", "date": target_date})
@@ -134,7 +137,6 @@ async def summarize_news_endpoint(
         summary = await generate_summary(full_text, api_key)
 
         # Save to Cache ONLY if it's the full default set
-        # This overwrites the previous summary for today with the latest one (including new articles)
         is_default_set = set(source_list) == valid_sources
         if is_default_set and "AI API Error" not in summary:
              await db.save_summary(today_str, summary)

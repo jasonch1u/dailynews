@@ -92,7 +92,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             transform: none;
         }
 
-        /* Content Section */
+        /* Status */
         #status {
             text-align: center;
             margin: 15px 0;
@@ -100,6 +100,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             color: #666;
             min-height: 24px;
         }
+
+        /* Layout Grid for Results */
+        .results-container {
+            display: grid;
+            grid-template-columns: 2fr 1fr; /* Summary takes more space, List takes less */
+            gap: 20px;
+            align-items: start;
+        }
+        @media (max-width: 768px) {
+            .results-container { grid-template-columns: 1fr; }
+        }
+
+        /* Summary Content */
         #content {
             background: var(--card-bg);
             padding: 40px;
@@ -108,8 +121,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             line-height: 1.7;
             min-height: 200px;
         }
-
-        /* Markdown Styles */
         #content h2 { border-bottom: 2px solid #f1f3f5; padding-bottom: 10px; margin-top: 30px; }
         #content h3 { color: #495057; margin-top: 20px; }
         #content ul { padding-left: 20px; }
@@ -122,6 +133,36 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             padding-left: 15px;
             color: #6c757d;
         }
+
+        /* Article List Sidebar */
+        #articleList {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        #articleList h3 { margin-top: 0; color: #495057; font-size: 1.1em; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; }
+        .article-item {
+            padding: 10px 0;
+            border-bottom: 1px solid #f1f3f5;
+            font-size: 0.95em;
+        }
+        .article-item:last-child { border-bottom: none; }
+        .article-source {
+            font-size: 0.75em;
+            color: #fff;
+            background: #6c757d;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        .article-link {
+            color: #333;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .article-link:hover { color: var(--primary-color); }
 
         .loader {
             border: 3px solid #f3f3f3;
@@ -157,7 +198,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <!-- History -->
         <div class="control-group">
             <span>📅 日期：</span>
-            <select id="historySelect" onchange="loadHistory()">
+            <select id="historySelect" onchange="handleDateChange()">
                 <option value="">今日最新 (Live)</option>
             </select>
         </div>
@@ -170,19 +211,36 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <div id="status"></div>
     </div>
 
-    <div id="content">
-        <div style="text-align: center; color: #adb5bd; margin-top: 50px;">
-            <h3>👋 歡迎使用</h3>
-            <p>請選擇新聞來源並點擊上方按鈕開始生成報告。</p>
+    <div class="results-container">
+        <!-- AI Summary -->
+        <div id="content">
+            <div style="text-align: center; color: #adb5bd; margin-top: 50px;">
+                <h3>👋 歡迎使用</h3>
+                <p>請選擇新聞來源並點擊上方按鈕開始生成報告。</p>
+            </div>
+        </div>
+
+        <!-- Raw Article List -->
+        <div id="articleList">
+            <h3>📑 原始文章列表</h3>
+            <div id="articleListContent" style="color: #999; font-size: 0.9em; text-align: center;">
+                (尚無資料)
+            </div>
         </div>
     </div>
 
     <script>
-        let currentMarkdown = "";
+        // Open all links in new tab
+        const renderer = new marked.Renderer();
+        renderer.link = function(href, title, text) {
+            return `<a href="${href}" title="${title || ''}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+        };
+        marked.setOptions({ renderer: renderer });
 
-        // Init
         window.addEventListener('DOMContentLoaded', async () => {
-            loadHistoryDates();
+            await loadHistoryDates();
+            // Optional: Auto load today's article list on start?
+            // loadArticlesList("");
         });
 
         async function loadHistoryDates() {
@@ -203,15 +261,55 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             } catch (e) { console.error(e); }
         }
 
-        async function loadHistory() {
+        async function handleDateChange() {
             const date = document.getElementById('historySelect').value;
-            // If user selects "Today" (empty value), do nothing, wait for button click?
-            // Or auto load? Let's wait for button click to allow source selection.
+
+            // 1. Manage Checkboxes
             if (date) {
-                // If history date selected, disable sources (history is fixed)
                 document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = true);
             } else {
                 document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = false);
+            }
+
+            // 2. Fetch Article List immediately for the selected date
+            await loadArticlesList(date);
+        }
+
+        async function loadArticlesList(date) {
+            const listContainer = document.getElementById('articleListContent');
+            listContainer.innerHTML = '<span class="loader"></span> 載入中...';
+
+            try {
+                // If date is empty, use today's date
+                const targetDate = date || new Date().toISOString().split('T')[0];
+                const res = await fetch(`/api/articles?date=${targetDate}`);
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.articles && data.articles.length > 0) {
+                        let html = '';
+                        data.articles.forEach(art => {
+                            let sourceColor = '#6c757d'; // default gray
+                            if(art.source.toLowerCase() === 'cnyes') sourceColor = '#dc3545'; // red
+                            if(art.source.toLowerCase() === 'blocktempo') sourceColor = '#fd7e14'; // orange
+                            if(art.source.toLowerCase() === 'anduril') sourceColor = '#0d6efd'; // blue
+
+                            html += `
+                            <div class="article-item">
+                                <span class="article-source" style="background:${sourceColor}">${art.source}</span>
+                                <a href="${art.url}" class="article-link" target="_blank">${art.title}</a>
+                            </div>`;
+                        });
+                        listContainer.innerHTML = html;
+                    } else {
+                        listContainer.innerHTML = '此日期尚無已存檔的文章。';
+                    }
+                } else {
+                    listContainer.innerHTML = '載入失敗。';
+                }
+            } catch (e) {
+                console.error(e);
+                listContainer.innerHTML = '載入錯誤。';
             }
         }
 
@@ -221,7 +319,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             const content = document.getElementById('content');
             const historyDate = document.getElementById('historySelect').value;
 
-            // Get Sources
             const checkboxes = document.querySelectorAll('.source-checkboxes input:checked');
             const sources = Array.from(checkboxes).map(cb => cb.value).join(',');
 
@@ -234,11 +331,17 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             status.innerHTML = `<span class="loader"></span> ${historyDate ? '正在載入歷史檔案...' : '正在掃描最新文章並檢查快取...'}`;
             content.style.opacity = '0.5';
 
+            // Also reload article list to catch any newly scraped ones (if Live)
+            // But we do it *after* scraping potentially?
+            // Better flow:
+            // 1. Trigger Summarize (which scrapes)
+            // 2. Then reload List
+
             try {
                 let url = '/api/summarize';
                 const params = new URLSearchParams();
                 if (historyDate) params.append('date', historyDate);
-                if (!historyDate && sources) params.append('sources', sources); // Only send sources for Live
+                if (!historyDate && sources) params.append('sources', sources);
 
                 const res = await fetch(`${url}?${params.toString()}`);
 
@@ -257,6 +360,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 } else {
                     status.innerHTML = '❌ 發生錯誤';
                 }
+
+                // If live update, reload the list to show newly scraped items
+                if (!historyDate) {
+                    await loadArticlesList("");
+                }
+
             } catch (error) {
                 console.error(error);
                 status.innerHTML = `❌ 錯誤: ${error.message}`;
