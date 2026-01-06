@@ -4,8 +4,11 @@ from fastapi.responses import JSONResponse, HTMLResponse
 import aiohttp
 import os
 import asyncio
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from scrapers import run_all_scrapers
+from api.templates import HTML_CONTENT
+from api.db import SupabaseClient
 
 # Load environment variables
 load_dotenv()
@@ -21,184 +24,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Embedded Frontend HTML to ensure serverless compatibility (avoids file path issues)
-HTML_CONTENT = r"""<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>每日新聞 AI 摘要</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📰</text></svg>">
-    <!-- Use marked.js for Markdown rendering -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f8f9fa;
-            color: #333;
-        }
-        header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        h1 {
-            color: #2c3e50;
-        }
-        .controls {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        button {
-            background-color: #0d6efd;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        button:hover {
-            background-color: #0b5ed7;
-        }
-        button:disabled {
-            background-color: #6c757d;
-            cursor: not-allowed;
-        }
-        #status {
-            text-align: center;
-            margin: 10px 0;
-            font-weight: bold;
-            color: #666;
-            min-height: 24px;
-        }
-        #content {
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            line-height: 1.6;
-        }
-        #content a {
-            color: #0d6efd;
-            text-decoration: none;
-        }
-        #content a:hover {
-            text-decoration: underline;
-        }
-        .download-btn {
-            display: none; /* Hidden by default */
-            margin-top: 20px;
-            background-color: #198754;
-        }
-        .download-btn:hover {
-            background-color: #157347;
-        }
-        .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #0d6efd;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            animation: spin 1s linear infinite;
-            display: inline-block;
-            vertical-align: middle;
-            margin-right: 10px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body>
-    <header>
-        <h1>📰 每日新聞 AI 摘要服務</h1>
-        <p>自動抓取 Anduril, BlockTempo, 鉅亨網 的最新新聞並生成重點摘要。</p>
-    </header>
+# Initialize Supabase Client
+db = SupabaseClient()
 
-    <div class="controls">
-        <button id="generateBtn" onclick="generateSummary()">🚀 開始抓取並生成摘要</button>
-        <div id="status"></div>
-    </div>
+# Taiwan Timezone for consistency
+TZ_TW = timezone(timedelta(hours=8))
 
-    <div id="content">
-        <p style="text-align: center; color: #888;">點擊上方按鈕開始生成...</p>
-    </div>
-
-    <div style="text-align: center;">
-        <button id="downloadBtn" class="download-btn" onclick="downloadMarkdown()">📥 下載 Markdown 報告</button>
-    </div>
-
-    <script>
-        let currentMarkdown = "";
-
-        async function generateSummary() {
-            const btn = document.getElementById('generateBtn');
-            const status = document.getElementById('status');
-            const content = document.getElementById('content');
-            const downloadBtn = document.getElementById('downloadBtn');
-
-            btn.disabled = true;
-            downloadBtn.style.display = 'none';
-            status.innerHTML = '<span class="loader"></span> 正在抓取新聞並進行 AI 摘要，這可能需要幾秒鐘...';
-            content.innerHTML = '';
-
-            try {
-                // Determine API URL based on environment (Vercel or local)
-                // In Vercel, relative path /api/summarize works if served from same domain
-                const response = await fetch('/api/summarize');
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const data = await response.json();
-
-                if (data.markdown) {
-                    currentMarkdown = data.markdown;
-                    content.innerHTML = marked.parse(data.markdown);
-                    status.innerHTML = '✅ 處理完成！';
-                    status.style.color = 'green';
-                    downloadBtn.style.display = 'inline-block';
-                } else {
-                    status.innerHTML = '❌ 未能生成摘要。';
-                    status.style.color = 'red';
-                }
-
-            } catch (error) {
-                console.error('Error:', error);
-                status.innerHTML = `❌ 發生錯誤: ${error.message}`;
-                status.style.color = 'red';
-                content.innerHTML = `<p style="color: red;">請求失敗，請稍後再試。<br>錯誤訊息: ${error.message}</p>`;
-            } finally {
-                btn.disabled = false;
-            }
-        }
-
-        function downloadMarkdown() {
-            if (!currentMarkdown) return;
-
-            const date = new Date().toISOString().split('T')[0];
-            const filename = `Daily_News_${date}.md`;
-
-            const blob = new Blob([currentMarkdown], { type: 'text/markdown' });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }
-    </script>
-</body>
-</html>"""
+# Debug Logging on Startup
+print("--- Server Startup ---")
+print(f"Supabase Configured: {db.is_configured}")
+if db.is_configured:
+    print(f"Supabase URL: {db.supabase_url[:10]}... (Masked)")
+else:
+    print("WARNING: Supabase is NOT configured. Caching and History will be disabled.")
+    # Log specifically which one is missing for Vercel logs
+    if not os.getenv("SUPABASE_URL"): print("Missing Env: SUPABASE_URL")
+    if not os.getenv("SUPABASE_KEY"): print("Missing Env: SUPABASE_KEY")
+print("----------------------")
 
 async def generate_summary(text: str, api_key: str):
     """Call Google Gemini API via REST to summarize the news"""
@@ -236,46 +78,84 @@ async def generate_summary(text: str, api_key: str):
             async with session.post(url, json=payload, headers={"Content-Type": "application/json"}) as response:
                 if response.status != 200:
                     error_text = await response.text()
+                    await db.log_error("api:gemini", f"Status {response.status}: {error_text}")
                     return f"AI API Error ({response.status}): {error_text}"
 
                 data = await response.json()
 
-                # Extract text from response
-                # Response structure: candidates[0].content.parts[0].text
                 try:
                     return data["candidates"][0]["content"]["parts"][0]["text"]
                 except (KeyError, IndexError):
+                    await db.log_error("api:gemini", "Unexpected format: " + str(data))
                     return "Error parsing AI response: Unexpected format."
 
     except Exception as e:
+        await db.log_error("api:gemini", str(e))
         return f"AI Request Failed: {e}"
+
+@app.get("/api/history")
+async def get_history_dates():
+    """Return a list of dates that have summaries available."""
+    dates = await db.get_available_dates()
+    return {"dates": dates}
 
 @app.get("/api/summarize")
 @app.get("/summarize")
-async def summarize_news_endpoint():
+async def summarize_news_endpoint(date: str = None):
+    """
+    Get news summary.
+    If 'date' param is provided (YYYY-MM-DD), fetch that specific day from cache.
+    If 'date' is NOT provided (or is today), try cache -> otherwise scrape & generate.
+    """
+    today_str = datetime.now(TZ_TW).strftime("%Y-%m-%d")
+    target_date = date if date else today_str
+
+    # 1. Check Cache (Supabase)
+    try:
+        cached_summary = await db.get_summary_by_date(target_date)
+        if cached_summary:
+            return JSONResponse(content={"markdown": cached_summary, "source": "cache", "date": target_date})
+
+        # If user requested a PAST date and it's not in cache, we return 404 (don't scrape past)
+        if target_date != today_str:
+             return JSONResponse(status_code=404, content={"markdown": f"⚠️ 找不到 {target_date} 的歷史摘要。", "date": target_date})
+
+    except Exception as e:
+        print(f"Cache check failed: {e}")
+        # Continue to generation ONLY if it's today
+        if target_date != today_str:
+            raise HTTPException(status_code=500, detail="Database Error during history fetch.")
+
+    # 2. Check API Key (Only needed for generation)
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="Server Error: GEMINI_API_KEY is not set.")
 
     try:
-        # 1. Run Scrapers concurrently
-        # We set a timeout for the scraping part to ensure it doesn't hang forever
-        # Vercel limit is strict, so we try to be fast.
-        articles = await asyncio.wait_for(run_all_scrapers(), timeout=15.0)
+        # 3. Run Scrapers concurrently
+        # Pass db.log_error as the logger
+        articles = await asyncio.wait_for(run_all_scrapers(db.log_error), timeout=25.0)
 
         if not articles:
-            return JSONResponse(content={"markdown": "⚠️ 沒有抓取到任何有效的新聞資料。請稍後再試。"})
+            await db.log_error("scraper:all", "No articles found")
+            return JSONResponse(content={"markdown": "⚠️ 沒有抓取到任何有效的新聞資料。請稍後再試。", "date": today_str})
 
         full_text = "\n".join(articles)
 
-        # 2. AI Summary
+        # 4. AI Summary
         summary = await generate_summary(full_text, api_key)
 
-        return JSONResponse(content={"markdown": summary})
+        # 5. Save to Cache
+        if "AI API Error" not in summary and "AI Request Failed" not in summary:
+             await db.save_summary(today_str, summary)
+
+        return JSONResponse(content={"markdown": summary, "source": "live", "date": today_str})
 
     except asyncio.TimeoutError:
+        await db.log_error("scraper:main", "Timeout")
         raise HTTPException(status_code=504, detail="Scraping timed out.")
     except Exception as e:
+        await db.log_error("scraper:main", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
