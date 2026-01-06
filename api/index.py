@@ -7,6 +7,7 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from dotenv import load_dotenv
+from api.llm_utils import translate_text, generate_daily_summary
 from scrapers import run_all_scrapers
 from api.templates import HTML_CONTENT
 from api.db import SupabaseClient
@@ -35,59 +36,6 @@ if not db.is_configured:
     if not os.getenv("SUPABASE_KEY"): print("Missing Env: SUPABASE_KEY")
 print("----------------------")
 
-async def generate_summary(text: str, api_key: str):
-    if not api_key: raise ValueError("API Key is missing")
-    model_name = "gemini-2.5-flash"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-
-    prompt_text = f"""
-    你是一個專業的新聞編輯。請根據以下抓取到的新聞標題和連結，
-    整理出一份「每日新聞熱點摘要」。
-
-    原始資料 (包含標題、連結與部分內文)：
-    {text}
-
-    要求：
-    1. **重點摘要**：請將新聞分類（例如：加密貨幣、股市金融、科技趨勢），並對每個主題進行總結。
-    2. **關鍵結論 (Key Takeaways)**：在每個分類或整份報告的開頭，列出 3 點最重要的市場洞察或趨勢結論。
-    3. **格式要求**：每一則新聞摘要請嚴格遵守以下格式，確保資訊清晰。
-       **非常重要：區塊順序與斷行必須完全一致**。
-
-       格式範例：
-
-       ### [來源網站] 新聞標題
-
-       (摘要內容，約 50-100 字，總結事件重點與影響)
-
-       **情緒**: (正面/負面/中性)
-
-       [閱讀全文](連結)
-
-       **注意**：
-       - 請將來源網站 (例如: [鉅亨網]) 放在標題的最前面。
-       - 每個區塊間請務必保留空行 (Double Line Break)。
-       - 「[閱讀全文](連結)」必須單獨一行，且放在該則新聞的最後。
-
-    4. 語氣專業且易讀，使用繁體中文。
-    5. 輸出格式請使用 Markdown。
-    """
-
-    payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers={"Content-Type": "application/json"}) as response:
-                if response.status != 200:
-                    err = await response.text()
-                    await db.log_error("api:gemini", f"Status {response.status}: {err}")
-                    return f"AI API Error: {err}"
-                data = await response.json()
-                try:
-                    return data["candidates"][0]["content"]["parts"][0]["text"]
-                except:
-                    return "Error parsing AI response."
-    except Exception as e:
-        await db.log_error("api:gemini", str(e))
-        return f"AI Request Failed: {e}"
 
 @app.get("/api/history")
 async def get_history_dates():
@@ -106,12 +54,14 @@ async def get_articles_endpoint(date: str):
 @app.get("/summarize")
 async def summarize_news_endpoint(
     date: Optional[str] = None,
-    sources: Optional[str] = Query(None, description="Comma separated sources: anduril,blocktempo,cnyes,cnbc,seekingalpha,marketwatch")
+    sources: Optional[str] = Query(None, description="Comma separated sources"),
+    refresh: bool = False
 ):
     """
     Get news summary.
-    - date: YYYY-MM-DD. If provided, prefer Cache.
-    - sources: If provided (usually with date=None), trigger Live Generation.
+    - date: YYYY-MM-DD. If provided, STRICT READ ONLY from Cache.
+    - refresh: If True, forces live generation (scrapers + AI) and updates cache for TODAY.
+    - sources: Optional filter for sources (only used during live generation).
     """
     today_str = datetime.now(TZ_TW).strftime("%Y-%m-%d")
     target_date = date if date else today_str
@@ -122,43 +72,62 @@ async def summarize_news_endpoint(
         source_list = [s.strip().lower() for s in sources.split(',') if s.strip().lower() in all_sources]
     else:
         source_list = list(all_sources)
-
     if not source_list: source_list = list(all_sources)
 
-    # 1. READ MODE: If date is explicitly provided, try to fetch from Cache FIRST.
-    if date:
+    # 1. READ MODE (If date provided OR (Not refreshing and Cache exists))
+    # If date is specifically provided, we ONLY read from cache. We never scrape for historical dates.
+    # If date is NOT provided (today), we check cache first. If refresh=True, we skip this.
+
+    should_check_cache = True
+    if not date and refresh:
+        should_check_cache = False
+
+    if should_check_cache:
         try:
             cached = await db.get_summary_by_date(target_date)
             if cached:
                 return JSONResponse(content={"markdown": cached, "source": "cache", "date": target_date})
 
-            if target_date != today_str:
+            # If date was explicitly provided and no cache found -> 404
+            if date:
                 return JSONResponse(status_code=404, content={"markdown": f"⚠️ 找不到 {target_date} 的歷史摘要。", "date": target_date})
-        except:
-            raise HTTPException(status_code=500, detail="DB Error")
+        except Exception as e:
+            print(f"DB Error: {e}")
+            # If DB fails, we might fall through to live generation ONLY if it's today and not a specific date query
+            if date: raise HTTPException(status_code=500, detail="DB Error")
 
-    # 2. GENERATE MODE (Live)
+    # 2. GENERATE MODE (Live) - Only allowed for TODAY (date=None)
+    if date and date != today_str:
+        return JSONResponse(status_code=404, content={"markdown": f"⚠️ 無法重新生成歷史日期 ({target_date}) 的摘要。", "date": target_date})
+
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key: raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing")
 
     try:
         # Run Scrapers
+        # 30s timeout for scrapers
         articles = await asyncio.wait_for(run_all_scrapers(db, source_list), timeout=30.0)
 
         if not articles:
-             cached = await db.get_summary_by_date(target_date)
-             if cached: return JSONResponse(content={"markdown": cached + "\n\n(註：目前尚未抓取到最新文章)", "source": "cache_fallback", "date": target_date})
-             return JSONResponse(content={"markdown": "⚠️ 今日尚未有符合條件的新聞。", "date": target_date})
+             # If scraping yielded nothing, try to see if we have a stale cache (as a fallback)
+             cached = await db.get_summary_by_date(today_str)
+             if cached:
+                 return JSONResponse(content={"markdown": cached + "\n\n(註：最新嘗試抓取未獲得新文章，顯示庫存摘要)", "source": "cache_fallback", "date": today_str})
+             return JSONResponse(content={"markdown": "⚠️ 今日尚未有符合條件的新聞 (且無歷史存檔)。", "date": today_str})
 
         full_text = "\n".join(articles)
 
         # Generate Summary
-        summary = await generate_summary(full_text, api_key)
+        summary = await generate_daily_summary(full_text, api_key)
 
-        # Save to Cache ONLY if it's the full default set
-        is_default_set = set(source_list) == all_sources
-        if is_default_set and "AI API Error" not in summary:
-             await db.save_summary(today_str, summary)
+        # Check for errors in summary (it returns string starting with "Error" or "Exception" on fail)
+        if summary and not summary.startswith("Error") and not summary.startswith("Exception"):
+             # Save to Cache ONLY if it's the full default set
+             is_default_set = set(source_list) == all_sources
+             if is_default_set:
+                  await db.save_summary(today_str, summary)
+        else:
+             await db.log_error("api:gemini", f"Gen Failed: {summary}")
 
         return JSONResponse(content={"markdown": summary, "source": "live_update", "date": today_str})
 
