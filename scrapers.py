@@ -2,7 +2,9 @@ import aiohttp
 import asyncio
 from bs4 import BeautifulSoup
 import time
+import os
 from datetime import datetime, timezone, timedelta
+from api.llm_utils import translate_text
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -23,10 +25,6 @@ def is_today_tw(date_iso_str):
     if not date_iso_str: return False
     try:
         if date_iso_str.endswith('Z'): date_iso_str = date_iso_str.replace('Z', '+00:00')
-        # Handles various RSS date formats if parsed manually, but here we expect ISO or datetime obj
-        # For simplicity in RSS, we might skip strict date checks or use 'pubDate' parsing if needed.
-        # But for 'check_date=True' logic in 'process_article_link', we assume the input is string.
-        # We will adapt logic for RSS below.
         dt = datetime.fromisoformat(date_iso_str).astimezone(TZ_TW)
         return dt.date() == get_tw_now().date()
     except:
@@ -58,10 +56,8 @@ async def process_article_link(session, db, title, link, source, content_selecto
     if db:
         cached = await db.get_article(link)
         if cached:
-            return f"### {title}\n(Cached Content)\n出處: {source} (Cached)"
-            # Note: For AI summary, we need the content. If cached has content, return it.
-            # The previous implementation returned full string.
-            return f"### {title}\n{cached['content']}\n出處: {source}"
+            # Return DB content
+            return f"### {cached['title']}\n{cached['content']}\n出處: {source}\nLink: {link}"
 
     try:
         html = await fetch_url_with_retry(session, link)
@@ -88,28 +84,31 @@ async def process_article_link(session, db, title, link, source, content_selecto
             if content:
                 if db:
                     await db.save_article(link, title, content, source, get_today_str())
-                return f"### {title}\n{content}\n出處: {source}"
+                return f"### {title}\n{content}\n出處: {source}\nLink: {link}"
     except Exception as e:
         if db: await db.log_error(f"scraper:{source}", f"Error processing {link}: {e}")
 
     return None
 
-async def fetch_rss_feed(session, db, url, source_name):
+async def fetch_rss_feed(session, db, url, source_name, translate=False):
     """
     Generic RSS Fetcher.
     Fetches RSS XML, parses items, checks DB, returns formatted string.
+    translate: If True, translates titles to Traditional Chinese.
     """
     articles = []
+    new_items = [] # (title, link, content) to be saved
+
     try:
         xml = await fetch_url_with_retry(session, url)
         if xml:
             try:
-                soup = BeautifulSoup(xml, 'xml') # Use xml parser if available
+                soup = BeautifulSoup(xml, 'xml')
             except Exception:
-                soup = BeautifulSoup(xml, 'html.parser') # Fallback if lxml is missing or fails
+                soup = BeautifulSoup(xml, 'html.parser')
 
             if not soup.find('item'):
-                soup = BeautifulSoup(xml, 'html.parser') # Double check with html.parser if xml failed to find items
+                soup = BeautifulSoup(xml, 'html.parser')
 
             items = soup.find_all('item')
             for item in items[:5]: # Top 5
@@ -117,26 +116,36 @@ async def fetch_rss_feed(session, db, url, source_name):
                 link = item.link.text.strip() if item.link else ""
                 if not link and item.guid: link = item.guid.text.strip()
 
-                description = item.description.text.strip() if item.description else ""
-
-                # Check DB first to avoid re-processing
+                # Check DB first
                 if db:
                     cached = await db.get_article(link)
                     if cached:
-                        articles.append(f"### {title}\n{cached['content']}\n出處: {source_name}")
+                        articles.append(f"### {cached['title']}\n{cached['content']}\n出處: {source_name}\nLink: {link}")
                         continue
 
-                # If not cached, use description as content (RSS usually has summary)
-                # OR fetch full article if needed. For international news, RSS summary is often enough/safer.
-                # Let's use RSS description to be safe against anti-bot on full pages (like Seeking Alpha).
-                # Clean description (remove html tags)
+                description = item.description.text.strip() if item.description else ""
                 desc_soup = BeautifulSoup(description, 'html.parser')
                 content = desc_soup.get_text().strip()
 
                 if content and link:
-                    if db:
-                        await db.save_article(link, title, content, source_name, get_today_str())
-                    articles.append(f"### {title}\n{content}\n出處: {source_name}")
+                    new_items.append({"title": title, "link": link, "content": content})
+
+            # Batch Translate Titles if needed
+            if translate and new_items:
+                titles = [x['title'] for x in new_items]
+                api_key = os.getenv("GEMINI_API_KEY")
+                translated_titles = await translate_text(titles, api_key)
+
+                # Update titles
+                for i, t_title in enumerate(translated_titles):
+                    if i < len(new_items):
+                        new_items[i]['title'] = t_title
+
+            # Save and Format
+            for item in new_items:
+                if db:
+                    await db.save_article(item['link'], item['title'], item['content'], source_name, get_today_str())
+                articles.append(f"### {item['title']}\n{item['content']}\n出處: {source_name}\nLink: {item['link']}")
 
     except Exception as e:
         print(f"{source_name} RSS Error: {e}")
@@ -202,19 +211,15 @@ async def fetch_cnyes_stock(session, db=None):
                     tasks.append(process_article_link(session, db, title, href, "Cnyes", "main", True))
     return [x for x in await asyncio.gather(*tasks) if x]
 
-# --- New Scrapers via RSS ---
-
 async def fetch_cnbc(session, db=None):
-    # CNBC World News RSS
-    return await fetch_rss_feed(session, db, "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", "CNBC")
+    # Enable Translation
+    return await fetch_rss_feed(session, db, "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", "CNBC", translate=True)
 
 async def fetch_seeking_alpha(session, db=None):
-    # Seeking Alpha Market Currents RSS
-    return await fetch_rss_feed(session, db, "https://seekingalpha.com/market_currents.xml", "SeekingAlpha")
+    return await fetch_rss_feed(session, db, "https://seekingalpha.com/market_currents.xml", "SeekingAlpha", translate=True)
 
 async def fetch_marketwatch(session, db=None):
-    # MarketWatch Top Stories RSS (Dow Jones)
-    return await fetch_rss_feed(session, db, "https://feeds.content.dowjones.io/public/rss/mw_topstories", "MarketWatch")
+    return await fetch_rss_feed(session, db, "https://feeds.content.dowjones.io/public/rss/mw_topstories", "MarketWatch", translate=True)
 
 async def run_all_scrapers(db_client=None, sources=None):
     """

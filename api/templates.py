@@ -322,12 +322,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     const data = await res.json();
                     select.innerHTML = '';
 
-                    // Add "Live / Today" option explicitly at top
-                    const liveOpt = document.createElement('option');
-                    liveOpt.value = ""; // Empty value means live/today
-                    liveOpt.text = "今日最新 (Live)";
-                    select.appendChild(liveOpt);
-
+                    // Load dates (No "Live" option added)
                     if (data.dates && data.dates.length > 0) {
                         data.dates.forEach(date => {
                             const opt = document.createElement('option');
@@ -336,13 +331,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                             select.appendChild(opt);
                         });
 
-                        // Default to latest history date if available
+                        // Default to latest history date
                         select.value = data.dates[0];
                         handleDateChange();
                     } else {
-                        // Default to Live only if no history
-                        select.value = "";
-                        handleDateChange();
+                        // If no history, show placeholder or empty
+                        select.innerHTML = '<option value="">-- 無歷史資料 --</option>';
+                        // We can trigger fetchSummary(true) here to auto-generate today?
+                        // Or just let user click. Let's just show empty state.
                     }
                 }
             } catch (e) {
