@@ -67,12 +67,23 @@ async def process_article_link(session, db, title, link, source, content_selecto
             if check_date:
                 # Basic check for meta tags
                 is_valid = False
+                # 1. Check Meta Tags
                 for meta_prop in ['article:published_time', 'og:updated_time', 'datePublished']:
                     meta = soup.find('meta', property=meta_prop) or soup.find('meta', itemprop=meta_prop)
                     if meta and meta.get('content'):
                         c = meta.get('content')
                         if ("T" in c and is_today_tw(c)) or c.startswith(get_today_str()):
                             is_valid = True; break
+
+                # 2. Check <time> tag (Common in modern sites like Cnyes, Anduril)
+                if not is_valid:
+                    time_tags = soup.find_all('time')
+                    for t in time_tags:
+                         datetime_val = t.get('datetime')
+                         if datetime_val:
+                              if ("T" in datetime_val and is_today_tw(datetime_val)) or datetime_val.startswith(get_today_str()):
+                                   is_valid = True; break
+
                 if not is_valid: return None
 
             container = soup.select_one(content_selector) if content_selector else soup.find('main')
@@ -240,5 +251,16 @@ async def run_all_scrapers(db_client=None, sources=None):
         if 'seekingalpha' in sources: tasks.append(fetch_seeking_alpha(session, db_client))
         if 'marketwatch' in sources: tasks.append(fetch_marketwatch(session, db_client))
 
-        results = await asyncio.gather(*tasks)
-        return [item for sublist in results for item in sublist]
+        # Use return_exceptions=True so one failure doesn't crash the whole batch
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Flatten and filter out exceptions
+        valid_results = []
+        for res in results:
+            if isinstance(res, Exception):
+                print(f"Scraper Error: {res}")
+                if db_client: await db_client.log_error("scraper:aggregator", str(res))
+            elif isinstance(res, list):
+                valid_results.extend(res)
+
+        return valid_results

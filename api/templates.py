@@ -322,7 +322,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     const data = await res.json();
                     select.innerHTML = '';
 
-                    // Load dates (No "Live" option added)
+                    // Add "Today (Live)" option
+                    const liveOpt = document.createElement('option');
+                    liveOpt.value = "";
+                    liveOpt.text = "⚡ 今日 (即時)";
+                    select.appendChild(liveOpt);
+
                     if (data.dates && data.dates.length > 0) {
                         data.dates.forEach(date => {
                             const opt = document.createElement('option');
@@ -335,10 +340,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                         select.value = data.dates[0];
                         handleDateChange();
                     } else {
-                        // If no history, show placeholder or empty
-                        select.innerHTML = '<option value="">-- 無歷史資料 --</option>';
-                        // We can trigger fetchSummary(true) here to auto-generate today?
-                        // Or just let user click. Let's just show empty state.
+                        // If no history, select the Live option
+                        select.value = "";
+                        handleDateChange();
                     }
                 }
             } catch (e) {
@@ -351,18 +355,20 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             const date = document.getElementById('historySelect').value;
 
             if (date) {
+                // Historical View
                 document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = true);
+                // Keep button visible, but user knows clicking it resets to today
+                document.getElementById('generateBtn').style.display = 'inline-block';
             } else {
+                // Today View
                 document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = false);
+                document.getElementById('generateBtn').style.display = 'inline-block';
             }
 
             await loadArticlesList(date);
 
-            if (date) {
-               fetchSummary(true);
-            } else {
-                fetchSummary(false);
-            }
+            // Important: Use false to prevent triggering live generation logic
+            fetchSummary(false);
         }
 
         async function loadArticlesList(date) {
@@ -442,10 +448,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             const content = document.getElementById('content');
             let historyDate = document.getElementById('historySelect').value;
 
+            // If user clicked "Update", we force reset to today and trigger refresh
             if (forceLive) {
                 document.getElementById('historySelect').value = "";
                 historyDate = "";
                 document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = false);
+                document.getElementById('generateBtn').style.display = 'inline-block';
             }
 
             const checkboxes = document.querySelectorAll('.source-checkboxes input:checked');
@@ -457,19 +465,29 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             }
 
             btn.disabled = true;
-            status.innerHTML = `<span class="loader"></span> ${historyDate ? '正在載入摘要...' : '正在掃描與分析最新內容...'}`;
+            status.innerHTML = `<span class="loader"></span> ${historyDate ? '正在讀取資料庫摘要...' : (forceLive ? '正在即時掃描與分析最新內容 (約需 20-30 秒)...' : '正在讀取最新摘要...')}`;
             content.style.opacity = '0.5';
 
             try {
                 let url = '/api/summarize';
                 const params = new URLSearchParams();
-                if (historyDate) params.append('date', historyDate);
-                if (!historyDate && sources) params.append('sources', sources);
+
+                if (historyDate) {
+                    params.append('date', historyDate);
+                } else {
+                    // Today / No Date selected
+                    if (sources) params.append('sources', sources);
+                    if (forceLive) params.append('refresh', 'true');
+                }
 
                 const res = await fetch(`${url}?${params.toString()}`);
 
                 if (res.status === 404) {
-                    content.innerHTML = '<div style="text-align: center; margin-top: 50px;"><h3>⚠️ 尚無摘要</h3><p>請點擊右上方「更新今日摘要」按鈕。</p></div>';
+                    if (historyDate) {
+                         content.innerHTML = '<div style="text-align: center; margin-top: 50px;"><h3>⚠️ 尚無存檔</h3><p>此日期沒有歷史摘要紀錄。</p></div>';
+                    } else {
+                         content.innerHTML = '<div style="text-align: center; margin-top: 50px;"><h3>⚠️ 尚無摘要</h3><p>今日尚未生成摘要，請點擊右上方「更新今日摘要」按鈕。</p></div>';
+                    }
                     status.innerHTML = '';
                     return;
                 }
