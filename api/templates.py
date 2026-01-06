@@ -6,7 +6,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>每日新聞 AI 摘要</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📰</text></svg>">
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Pin marked.js version to 4.3.0 to ensure renderer.link(href, title, text) signature works as expected -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
     <style>
         :root {
             --primary-color: #0d6efd;
@@ -199,7 +200,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <div class="control-group">
             <span>📅 日期：</span>
             <select id="historySelect" onchange="handleDateChange()">
-                <option value="">今日最新 (Live)</option>
+                <option value="">-- 載入中 --</option>
             </select>
         </div>
 
@@ -216,7 +217,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <div id="content">
             <div style="text-align: center; color: #adb5bd; margin-top: 50px;">
                 <h3>👋 歡迎使用</h3>
-                <p>請選擇新聞來源並點擊上方按鈕開始生成報告。</p>
+                <p>正在載入最新資料...</p>
             </div>
         </div>
 
@@ -231,6 +232,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     <script>
         // Open all links in new tab
+        // Use marked 4.3.0 syntax
         const renderer = new marked.Renderer();
         renderer.link = function(href, title, text) {
             return `<a href="${href}" title="${title || ''}" target="_blank" rel="noopener noreferrer">${text}</a>`;
@@ -239,8 +241,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         window.addEventListener('DOMContentLoaded', async () => {
             await loadHistoryDates();
-            // Optional: Auto load today's article list on start?
-            // loadArticlesList("");
         });
 
         async function loadHistoryDates() {
@@ -249,16 +249,44 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 const res = await fetch('/api/history');
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.dates) {
+                    select.innerHTML = ''; // Clear "Loading..."
+
+                    let hasHistory = data.dates && data.dates.length > 0;
+
+                    // Add "Live / Today" option explicitly?
+                    // User wants default to be LATEST date.
+                    // If history exists, dates[0] is latest.
+                    // But we might want a "Force Live Update" option?
+                    // Let's stick to the user request: Default show latest date.
+
+                    if (hasHistory) {
                         data.dates.forEach(date => {
                             const opt = document.createElement('option');
                             opt.value = date;
                             opt.text = date;
                             select.appendChild(opt);
                         });
+
+                        // Select the first one (Latest)
+                        select.value = data.dates[0];
+
+                        // Trigger load for this date
+                        handleDateChange();
+                    } else {
+                        // No history, fallback to Live
+                        const opt = document.createElement('option');
+                        opt.value = "";
+                        opt.text = "今日最新 (Live)";
+                        select.appendChild(opt);
+
+                        // Load live/empty list
+                        handleDateChange();
                     }
                 }
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error(e);
+                select.innerHTML = '<option value="">無法載入日期</option>';
+            }
         }
 
         async function handleDateChange() {
@@ -271,8 +299,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = false);
             }
 
-            // 2. Fetch Article List immediately for the selected date
+            // 2. Fetch Article List immediately
             await loadArticlesList(date);
+
+            // 3. Fetch Summary automatically if date is present (User experience: open page -> see content)
+            // But we should probably wait for user to click button for "Live"?
+            // User said: "預設打開網頁或是選擇日期時，幫我載入最新或是選擇日期的資料庫文章"
+            // "這段不用透過AI協助，直接從資料庫抓取即可"
+            // So: Load Articles -> YES. Load AI Summary -> Optional/Button?
+            // "預設顯示'日期'為最新日期" implies seeing the state of that day.
+            // Let's AUTO load summary if it's a history date (cached).
+            if (date) {
+               fetchSummary(true); // pass flag to indicate auto-load
+            }
         }
 
         async function loadArticlesList(date) {
@@ -280,7 +319,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             listContainer.innerHTML = '<span class="loader"></span> 載入中...';
 
             try {
-                // If date is empty, use today's date
                 const targetDate = date || new Date().toISOString().split('T')[0];
                 const res = await fetch(`/api/articles?date=${targetDate}`);
 
@@ -289,10 +327,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     if (data.articles && data.articles.length > 0) {
                         let html = '';
                         data.articles.forEach(art => {
-                            let sourceColor = '#6c757d'; // default gray
-                            if(art.source.toLowerCase() === 'cnyes') sourceColor = '#dc3545'; // red
-                            if(art.source.toLowerCase() === 'blocktempo') sourceColor = '#fd7e14'; // orange
-                            if(art.source.toLowerCase() === 'anduril') sourceColor = '#0d6efd'; // blue
+                            let sourceColor = '#6c757d';
+                            if(art.source.toLowerCase().includes('cnyes')) sourceColor = '#dc3545';
+                            if(art.source.toLowerCase().includes('blocktempo')) sourceColor = '#fd7e14';
+                            if(art.source.toLowerCase().includes('anduril')) sourceColor = '#0d6efd';
 
                             html += `
                             <div class="article-item">
@@ -313,7 +351,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             }
         }
 
-        async function fetchSummary() {
+        async function fetchSummary(isAutoLoad = false) {
             const btn = document.getElementById('generateBtn');
             const status = document.getElementById('status');
             const content = document.getElementById('content');
@@ -328,14 +366,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             }
 
             btn.disabled = true;
-            status.innerHTML = `<span class="loader"></span> ${historyDate ? '正在載入歷史檔案...' : '正在掃描最新文章並檢查快取...'}`;
+            status.innerHTML = `<span class="loader"></span> ${historyDate ? '正在載入摘要...' : '正在掃描與分析...'}`;
             content.style.opacity = '0.5';
-
-            // Also reload article list to catch any newly scraped ones (if Live)
-            // But we do it *after* scraping potentially?
-            // Better flow:
-            // 1. Trigger Summarize (which scrapes)
-            // 2. Then reload List
 
             try {
                 let url = '/api/summarize';
@@ -346,7 +378,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 const res = await fetch(`${url}?${params.toString()}`);
 
                 if (res.status === 404) {
-                    content.innerHTML = '<p style="text-align:center; color: #888;">查無資料。</p>';
+                    content.innerHTML = '<div style="text-align: center; margin-top: 50px;"><h3>⚠️ 尚無摘要</h3><p>請點擊上方按鈕生成。</p></div>';
                     status.innerHTML = '';
                     return;
                 }
@@ -361,8 +393,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     status.innerHTML = '❌ 發生錯誤';
                 }
 
-                // If live update, reload the list to show newly scraped items
-                if (!historyDate) {
+                if (!historyDate && !isAutoLoad) {
                     await loadArticlesList("");
                 }
 
