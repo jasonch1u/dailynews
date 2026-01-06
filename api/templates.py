@@ -235,6 +235,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <div class="header-left">
             <div style="font-size: 1.5rem;">📰</div>
             <h1>每日新聞 AI 摘要</h1>
+            <!-- Moved Date Selector Here -->
+            <select id="historySelect" onchange="handleDateChange()" style="margin-left: 10px;">
+                <option value="">-- 載入中 --</option>
+            </select>
         </div>
 
         <div class="header-controls">
@@ -245,16 +249,15 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     <label><input type="checkbox" value="anduril" checked> Anduril</label>
                     <label><input type="checkbox" value="blocktempo" checked> BlockTempo</label>
                     <label><input type="checkbox" value="cnyes" checked> 鉅亨網</label>
+                    <hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
+                    <label><input type="checkbox" value="cnbc" checked> CNBC (World)</label>
+                    <label><input type="checkbox" value="seekingalpha" checked> Seeking Alpha</label>
+                    <label><input type="checkbox" value="marketwatch" checked> MarketWatch</label>
                 </div>
             </div>
 
-            <!-- Date Selector -->
-            <select id="historySelect" onchange="handleDateChange()">
-                <option value="">-- 載入中 --</option>
-            </select>
-
-            <!-- Generate Button -->
-            <button id="generateBtn" class="primary-btn" onclick="fetchSummary()">🚀 生成摘要</button>
+            <!-- Generate Button (Now specifically for Live Update) -->
+            <button id="generateBtn" class="primary-btn" onclick="fetchSummary(true)">🚀 更新今日摘要</button>
         </div>
     </header>
 
@@ -283,7 +286,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         renderer.link = function(href, title, text) {
             return `<a href="${href}" title="${title || ''}" target="_blank" rel="noopener noreferrer">${text}</a>`;
         };
-        // Enable breaks: true to convert single newlines to <br>
         marked.setOptions({
             renderer: renderer,
             breaks: true,
@@ -302,22 +304,28 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     const data = await res.json();
                     select.innerHTML = '';
 
-                    let hasHistory = data.dates && data.dates.length > 0;
+                    // Add "Live / Today" option explicitly at top
+                    const liveOpt = document.createElement('option');
+                    liveOpt.value = ""; // Empty value means live/today
+                    liveOpt.text = "今日最新 (Live)";
+                    select.appendChild(liveOpt);
 
-                    if (hasHistory) {
+                    if (data.dates && data.dates.length > 0) {
                         data.dates.forEach(date => {
                             const opt = document.createElement('option');
                             opt.value = date;
                             opt.text = date;
                             select.appendChild(opt);
                         });
+
+                        // Default to latest history date if available (User requested "default load latest cache")
+                        // But also need "Live" available.
+                        // Actually, if we select dates[0], it IS the latest cache.
                         select.value = data.dates[0];
                         handleDateChange();
                     } else {
-                        const opt = document.createElement('option');
-                        opt.value = "";
-                        opt.text = "今日最新 (Live)";
-                        select.appendChild(opt);
+                        // Default to Live
+                        select.value = "";
                         handleDateChange();
                     }
                 }
@@ -330,6 +338,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         async function handleDateChange() {
             const date = document.getElementById('historySelect').value;
 
+            // Logic: If date is empty (Live), enable sources. If History, disable.
+            // Wait, user said "Source selection default selectable".
+            // If viewing history, we can't change sources for that history record (it's fixed text).
+            // But for "Live", we can.
             if (date) {
                 document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = true);
             } else {
@@ -338,8 +350,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
             await loadArticlesList(date);
 
+            // If date is selected (History), load it.
             if (date) {
-               fetchSummary(true);
+               fetchSummary(false);
+            } else {
+                // If switched to Live, do we auto-load?
+                // Maybe just show "Click Generate"? Or auto-load cache if exists for today?
+                // Let's allow auto-load for today's cache too.
+                fetchSummary(false);
             }
         }
 
@@ -359,16 +377,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                             let sourceColor = '#6c757d';
                             let displaySource = art.source;
 
-                            if(art.source.toLowerCase().includes('cnyes')) {
-                                sourceColor = '#dc3545';
-                            }
-                            if(art.source.toLowerCase().includes('blocktempo')) {
-                                sourceColor = '#fd7e14';
-                                displaySource = '動區';
-                            }
-                            if(art.source.toLowerCase().includes('anduril')) {
-                                sourceColor = '#0d6efd';
-                            }
+                            // Map source names
+                            const s = art.source.toLowerCase();
+                            if(s.includes('cnyes')) sourceColor = '#dc3545';
+                            else if(s.includes('blocktempo')) { sourceColor = '#fd7e14'; displaySource = '動區'; }
+                            else if(s.includes('anduril')) sourceColor = '#0d6efd';
+                            else if(s.includes('cnbc')) sourceColor = '#20c997';
+                            else if(s.includes('seekingalpha')) sourceColor = '#ffc107';
+                            else if(s.includes('marketwatch')) sourceColor = '#6610f2';
 
                             html += `
                             <div class="article-item">
@@ -389,11 +405,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             }
         }
 
-        async function fetchSummary(isAutoLoad = false) {
+        async function fetchSummary(forceLive = false) {
             const btn = document.getElementById('generateBtn');
             const status = document.getElementById('status');
             const content = document.getElementById('content');
-            const historyDate = document.getElementById('historySelect').value;
+            let historyDate = document.getElementById('historySelect').value;
+
+            // If forcing live (Button Click), reset date selection to empty (Live)
+            if (forceLive) {
+                document.getElementById('historySelect').value = "";
+                historyDate = "";
+                // Re-enable checkboxes since we are now in Live mode
+                document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = false);
+            }
 
             const checkboxes = document.querySelectorAll('.source-checkboxes input:checked');
             const sources = Array.from(checkboxes).map(cb => cb.value).join(',');
@@ -404,19 +428,20 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             }
 
             btn.disabled = true;
-            status.innerHTML = `<span class="loader"></span> ${historyDate ? '正在載入摘要...' : '正在掃描與分析...'}`;
+            status.innerHTML = `<span class="loader"></span> ${historyDate ? '正在載入摘要...' : '正在掃描與分析最新內容...'}`;
             content.style.opacity = '0.5';
 
             try {
                 let url = '/api/summarize';
                 const params = new URLSearchParams();
                 if (historyDate) params.append('date', historyDate);
+                // Send sources if Live
                 if (!historyDate && sources) params.append('sources', sources);
 
                 const res = await fetch(`${url}?${params.toString()}`);
 
                 if (res.status === 404) {
-                    content.innerHTML = '<div style="text-align: center; margin-top: 50px;"><h3>⚠️ 尚無摘要</h3><p>請點擊上方按鈕生成。</p></div>';
+                    content.innerHTML = '<div style="text-align: center; margin-top: 50px;"><h3>⚠️ 尚無摘要</h3><p>請點擊右上方「更新今日摘要」按鈕。</p></div>';
                     status.innerHTML = '';
                     return;
                 }
@@ -431,7 +456,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     status.innerHTML = '❌ 發生錯誤';
                 }
 
-                if (!historyDate && !isAutoLoad) {
+                // If forcing live, also reload article list to show new stuff
+                if (forceLive) {
                     await loadArticlesList("");
                 }
 

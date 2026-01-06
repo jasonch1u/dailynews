@@ -23,6 +23,10 @@ def is_today_tw(date_iso_str):
     if not date_iso_str: return False
     try:
         if date_iso_str.endswith('Z'): date_iso_str = date_iso_str.replace('Z', '+00:00')
+        # Handles various RSS date formats if parsed manually, but here we expect ISO or datetime obj
+        # For simplicity in RSS, we might skip strict date checks or use 'pubDate' parsing if needed.
+        # But for 'check_date=True' logic in 'process_article_link', we assume the input is string.
+        # We will adapt logic for RSS below.
         dt = datetime.fromisoformat(date_iso_str).astimezone(TZ_TW)
         return dt.date() == get_tw_now().date()
     except:
@@ -36,12 +40,12 @@ async def fetch_url_with_retry(session, url, retries=2):
                 if response.status == 200:
                     return await response.text()
                 elif response.status == 404:
-                    return None # Don't retry 404
+                    return None
         except Exception as e:
             if i == retries:
-                print(f"Failed to fetch {url} after {retries} retries: {e}")
+                print(f"Failed to fetch {url}: {e}")
             else:
-                await asyncio.sleep(1) # Wait 1s before retry
+                await asyncio.sleep(1)
     return None
 
 async def process_article_link(session, db, title, link, source, content_selector, check_date=False):
@@ -50,39 +54,31 @@ async def process_article_link(session, db, title, link, source, content_selecto
     1. Check DB for content.
     2. If miss, scrape.
     3. Save to DB.
-    4. Return formatted string.
     """
-    # 1. Check DB
     if db:
         cached = await db.get_article(link)
         if cached:
-            return f"標題: {title}\n連結: {link}\n內文: {cached['content']}\n出處: {source} (Cached)"
+            return f"### {title}\n(Cached Content)\n出處: {source} (Cached)"
+            # Note: For AI summary, we need the content. If cached has content, return it.
+            # The previous implementation returned full string.
+            return f"### {title}\n{cached['content']}\n出處: {source}"
 
-    # 2. Scrape
     try:
         html = await fetch_url_with_retry(session, link)
         if html:
             soup = BeautifulSoup(html, 'html.parser')
             
-            # Date Check (Strict)
             if check_date:
+                # Basic check for meta tags
                 is_valid = False
-                time_tag = soup.find('time')
-                if time_tag and time_tag.get('datetime') and is_today_tw(time_tag.get('datetime')):
-                     is_valid = True
-                
-                if not is_valid:
-                    # Meta tags fallback
-                    for meta_prop in ['article:published_time', 'og:updated_time', 'datePublished']:
-                        meta = soup.find('meta', property=meta_prop) or soup.find('meta', itemprop=meta_prop)
-                        if meta and meta.get('content'):
-                            c = meta.get('content')
-                            if ("T" in c and is_today_tw(c)) or c.startswith(get_today_str()):
-                                is_valid = True; break
-
+                for meta_prop in ['article:published_time', 'og:updated_time', 'datePublished']:
+                    meta = soup.find('meta', property=meta_prop) or soup.find('meta', itemprop=meta_prop)
+                    if meta and meta.get('content'):
+                        c = meta.get('content')
+                        if ("T" in c and is_today_tw(c)) or c.startswith(get_today_str()):
+                            is_valid = True; break
                 if not is_valid: return None
 
-            # Content Extraction
             container = soup.select_one(content_selector) if content_selector else soup.find('main')
             if not container: container = soup
 
@@ -90,20 +86,62 @@ async def process_article_link(session, db, title, link, source, content_selecto
             content = text[:2000] + "..." if len(text) > 2000 else text
 
             if content:
-                # 3. Save to DB
                 if db:
                     await db.save_article(link, title, content, source, get_today_str())
-
-                return f"標題: {title}\n連結: {link}\n內文: {content}\n出處: {source}"
+                return f"### {title}\n{content}\n出處: {source}"
     except Exception as e:
         if db: await db.log_error(f"scraper:{source}", f"Error processing {link}: {e}")
 
     return None
 
+async def fetch_rss_feed(session, db, url, source_name):
+    """
+    Generic RSS Fetcher.
+    Fetches RSS XML, parses items, checks DB, returns formatted string.
+    """
+    articles = []
+    try:
+        xml = await fetch_url_with_retry(session, url)
+        if xml:
+            soup = BeautifulSoup(xml, 'xml') # Use xml parser if available, or html.parser handles standard tags
+            if not soup.find('item'):
+                soup = BeautifulSoup(xml, 'html.parser') # Fallback
+
+            items = soup.find_all('item')
+            for item in items[:5]: # Top 5
+                title = item.title.text.strip() if item.title else "No Title"
+                link = item.link.text.strip() if item.link else ""
+                if not link and item.guid: link = item.guid.text.strip()
+
+                description = item.description.text.strip() if item.description else ""
+
+                # Check DB first to avoid re-processing
+                if db:
+                    cached = await db.get_article(link)
+                    if cached:
+                        articles.append(f"### {title}\n{cached['content']}\n出處: {source_name}")
+                        continue
+
+                # If not cached, use description as content (RSS usually has summary)
+                # OR fetch full article if needed. For international news, RSS summary is often enough/safer.
+                # Let's use RSS description to be safe against anti-bot on full pages (like Seeking Alpha).
+                # Clean description (remove html tags)
+                desc_soup = BeautifulSoup(description, 'html.parser')
+                content = desc_soup.get_text().strip()
+
+                if content and link:
+                    if db:
+                        await db.save_article(link, title, content, source_name, get_today_str())
+                    articles.append(f"### {title}\n{content}\n出處: {source_name}")
+
+    except Exception as e:
+        print(f"{source_name} RSS Error: {e}")
+        if db: await db.log_error(f"scraper:{source_name}", str(e))
+    return articles
+
 async def fetch_anduril_tw(session, db=None):
     url = "https://www.anduril.tw"
     tasks = []
-
     html = await fetch_url_with_retry(session, url)
     if html:
         soup = BeautifulSoup(html, 'html.parser')
@@ -112,24 +150,19 @@ async def fetch_anduril_tw(session, db=None):
             if len(tasks) >= 5: break
             time_tag = card.find('time')
             if time_tag and time_tag.get('datetime') != get_today_str(): continue
-            
             link_tag = card.find('a', class_='gh-card-link')
             title_tag = card.find('h3', class_='gh-card-title')
-
             if link_tag and title_tag:
                 title = title_tag.text.strip()
                 link = link_tag.get('href')
                 if not link.startswith('http'): link = url + link if link.startswith('/') else url + '/' + link
-
                 if not any(x in link for x in ["tag", "category", "author"]):
                     tasks.append(process_article_link(session, db, title, link, "Anduril", "section.gh-content", False))
-
     return [x for x in await asyncio.gather(*tasks) if x]
 
 async def fetch_blocktempo(session, db=None):
     url = "https://www.blocktempo.com/2026/"
     tasks = []
-
     html = await fetch_url_with_retry(session, url)
     if html:
         soup = BeautifulSoup(html, 'html.parser')
@@ -141,13 +174,11 @@ async def fetch_blocktempo(session, db=None):
                 link = a.get('href')
                 if len(title) > 5:
                     tasks.append(process_article_link(session, db, title, link, "BlockTempo", ".entry-content", True))
-
     return [x for x in await asyncio.gather(*tasks) if x]
 
 async def fetch_cnyes_stock(session, db=None):
     url = "https://news.cnyes.com/news/cat/wd_stock_all"
     tasks = []
-
     html = await fetch_url_with_retry(session, url)
     if html:
         soup = BeautifulSoup(html, 'html.parser')
@@ -156,38 +187,49 @@ async def fetch_cnyes_stock(session, db=None):
             if len(tasks) >= 5: break
             href = a['href']
             if "/news/id/" not in href: continue
-
             title = a.get('title') or a.text.strip()
             if not title:
                 t_div = a.find('div', title=True)
                 if t_div: title = t_div.get('title')
-
             if title and len(title) > 5:
                 if not href.startswith('http'): href = "https://news.cnyes.com" + href
                 if href not in seen:
                     seen.add(href)
                     tasks.append(process_article_link(session, db, title, href, "Cnyes", "main", True))
-
     return [x for x in await asyncio.gather(*tasks) if x]
+
+# --- New Scrapers via RSS ---
+
+async def fetch_cnbc(session, db=None):
+    # CNBC World News RSS
+    return await fetch_rss_feed(session, db, "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", "CNBC")
+
+async def fetch_seeking_alpha(session, db=None):
+    # Seeking Alpha Market Currents RSS
+    return await fetch_rss_feed(session, db, "https://seekingalpha.com/market_currents.xml", "SeekingAlpha")
+
+async def fetch_marketwatch(session, db=None):
+    # MarketWatch Top Stories RSS (Dow Jones)
+    return await fetch_rss_feed(session, db, "https://feeds.content.dowjones.io/public/rss/mw_topstories", "MarketWatch")
 
 async def run_all_scrapers(db_client=None, sources=None):
     """
     Run scrapers based on sources list.
-    sources: list of strings ['anduril', 'blocktempo', 'cnyes']
+    sources: list of strings
     """
     tasks = []
-
-    # Default to all if None or empty
     if not sources:
-        sources = ['anduril', 'blocktempo', 'cnyes']
+        sources = ['anduril', 'blocktempo', 'cnyes', 'cnbc', 'seekingalpha', 'marketwatch']
 
     async with aiohttp.ClientSession() as session:
-        if 'anduril' in sources:
-            tasks.append(fetch_anduril_tw(session, db_client))
-        if 'blocktempo' in sources:
-            tasks.append(fetch_blocktempo(session, db_client))
-        if 'cnyes' in sources:
-            tasks.append(fetch_cnyes_stock(session, db_client))
+        if 'anduril' in sources: tasks.append(fetch_anduril_tw(session, db_client))
+        if 'blocktempo' in sources: tasks.append(fetch_blocktempo(session, db_client))
+        if 'cnyes' in sources: tasks.append(fetch_cnyes_stock(session, db_client))
+
+        # New sources
+        if 'cnbc' in sources: tasks.append(fetch_cnbc(session, db_client))
+        if 'seekingalpha' in sources: tasks.append(fetch_seeking_alpha(session, db_client))
+        if 'marketwatch' in sources: tasks.append(fetch_marketwatch(session, db_client))
 
         results = await asyncio.gather(*tasks)
         return [item for sublist in results for item in sublist]

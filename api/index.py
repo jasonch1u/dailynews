@@ -65,7 +65,7 @@ async def generate_summary(text: str, api_key: str):
 
        **注意**：
        - 「[閱讀全文](連結)」必須單獨一行，且放在該則新聞的最後。
-       - 不同區塊間請務必保留空行。
+       - 不同區塊間請務必保留空行 (Double Line Break)。
 
     4. 語氣專業且易讀，使用繁體中文。
     5. 輸出格式請使用 Markdown。
@@ -105,7 +105,7 @@ async def get_articles_endpoint(date: str):
 @app.get("/summarize")
 async def summarize_news_endpoint(
     date: Optional[str] = None,
-    sources: Optional[str] = Query(None, description="Comma separated sources: anduril,blocktempo,cnyes")
+    sources: Optional[str] = Query(None, description="Comma separated sources: anduril,blocktempo,cnyes,cnbc,seekingalpha,marketwatch")
 ):
     """
     Get news summary.
@@ -115,28 +115,28 @@ async def summarize_news_endpoint(
     today_str = datetime.now(TZ_TW).strftime("%Y-%m-%d")
     target_date = date if date else today_str
 
-    source_list = sources.split(',') if sources else ['anduril', 'blocktempo', 'cnyes']
-    valid_sources = {'anduril', 'blocktempo', 'cnyes'}
-    source_list = [s.strip().lower() for s in source_list if s.strip().lower() in valid_sources]
-    if not source_list: source_list = ['anduril', 'blocktempo', 'cnyes']
+    # Defaults
+    all_sources = {'anduril', 'blocktempo', 'cnyes', 'cnbc', 'seekingalpha', 'marketwatch'}
+    if sources:
+        source_list = [s.strip().lower() for s in sources.split(',') if s.strip().lower() in all_sources]
+    else:
+        source_list = list(all_sources)
+
+    if not source_list: source_list = list(all_sources)
 
     # 1. READ MODE: If date is explicitly provided, try to fetch from Cache FIRST.
-    # This covers both "History" and "Auto-load Latest Date" scenarios.
     if date:
         try:
             cached = await db.get_summary_by_date(target_date)
             if cached:
                 return JSONResponse(content={"markdown": cached, "source": "cache", "date": target_date})
 
-            # If date is in the past and no cache -> 404
             if target_date != today_str:
                 return JSONResponse(status_code=404, content={"markdown": f"⚠️ 找不到 {target_date} 的歷史摘要。", "date": target_date})
-
-            # If date is Today but no cache -> Fall through to Generation (below)
         except:
             raise HTTPException(status_code=500, detail="DB Error")
 
-    # 2. GENERATE MODE: If date is None (Live) OR date is Today but Cache Miss
+    # 2. GENERATE MODE (Live)
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key: raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing")
 
@@ -145,7 +145,6 @@ async def summarize_news_endpoint(
         articles = await asyncio.wait_for(run_all_scrapers(db, source_list), timeout=30.0)
 
         if not articles:
-             # Try cache one last time just in case
              cached = await db.get_summary_by_date(target_date)
              if cached: return JSONResponse(content={"markdown": cached + "\n\n(註：目前尚未抓取到最新文章)", "source": "cache_fallback", "date": target_date})
              return JSONResponse(content={"markdown": "⚠️ 今日尚未有符合條件的新聞。", "date": target_date})
@@ -156,7 +155,7 @@ async def summarize_news_endpoint(
         summary = await generate_summary(full_text, api_key)
 
         # Save to Cache ONLY if it's the full default set
-        is_default_set = set(source_list) == valid_sources
+        is_default_set = set(source_list) == all_sources
         if is_default_set and "AI API Error" not in summary:
              await db.save_summary(today_str, summary)
 
