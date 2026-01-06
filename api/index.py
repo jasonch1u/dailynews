@@ -102,8 +102,8 @@ async def summarize_news_endpoint(
 ):
     """
     Get news summary.
-    - date: YYYY-MM-DD (Defaults to today)
-    - sources: filter (e.g. 'cnyes,anduril').
+    - date: YYYY-MM-DD. If provided, prefer Cache.
+    - sources: If provided (usually with date=None), trigger Live Generation.
     """
     today_str = datetime.now(TZ_TW).strftime("%Y-%m-%d")
     target_date = date if date else today_str
@@ -113,26 +113,32 @@ async def summarize_news_endpoint(
     source_list = [s.strip().lower() for s in source_list if s.strip().lower() in valid_sources]
     if not source_list: source_list = ['anduril', 'blocktempo', 'cnyes']
 
-    # 1. Logic for Past Dates: strict cache check
-    if target_date != today_str:
+    # 1. READ MODE: If date is explicitly provided, try to fetch from Cache FIRST.
+    # This covers both "History" and "Auto-load Latest Date" scenarios.
+    if date:
         try:
             cached = await db.get_summary_by_date(target_date)
             if cached:
                 return JSONResponse(content={"markdown": cached, "source": "cache", "date": target_date})
-            return JSONResponse(status_code=404, content={"markdown": f"⚠️ 找不到 {target_date} 的歷史摘要。", "date": target_date})
+
+            # If date is in the past and no cache -> 404
+            if target_date != today_str:
+                return JSONResponse(status_code=404, content={"markdown": f"⚠️ 找不到 {target_date} 的歷史摘要。", "date": target_date})
+
+            # If date is Today but no cache -> Fall through to Generation (below)
         except:
             raise HTTPException(status_code=500, detail="DB Error")
 
-    # 2. Logic for Today
+    # 2. GENERATE MODE: If date is None (Live) OR date is Today but Cache Miss
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key: raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing")
 
     try:
-        # Run Scrapers (Incremental check)
-        # This will populate 'articles' table
+        # Run Scrapers
         articles = await asyncio.wait_for(run_all_scrapers(db, source_list), timeout=30.0)
 
         if not articles:
+             # Try cache one last time just in case
              cached = await db.get_summary_by_date(target_date)
              if cached: return JSONResponse(content={"markdown": cached + "\n\n(註：目前尚未抓取到最新文章)", "source": "cache_fallback", "date": target_date})
              return JSONResponse(content={"markdown": "⚠️ 今日尚未有符合條件的新聞。", "date": target_date})
