@@ -1,4 +1,4 @@
--- Create the table for storing daily news summaries
+-- Create the table for storing daily news summaries (The "Report")
 create table if not exists news_summaries (
   date date primary key,
   content text not null,
@@ -18,3 +18,16 @@ create table if not exists error_logs (
 
 -- Enable RLS for logs
 alter table error_logs enable row level security;
+
+-- Create table for individual articles (Granular Cache)
+create table if not exists articles (
+  url text primary key,
+  title text not null,
+  content text not null, -- Scraped text
+  source text not null, -- 'anduril', 'blocktempo', 'cnyes'
+  published_date date not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Enable RLS for articles
+alter table articles enable row level security;

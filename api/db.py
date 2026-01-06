@@ -10,14 +10,11 @@ class SupabaseClient:
         # Check configuration explicitly for debugging
         self.is_configured = True
         if not self.supabase_url:
-            print("❌ Error: SUPABASE_URL environment variable is missing.")
             self.is_configured = False
         if not self.supabase_key:
-            print("❌ Error: SUPABASE_KEY environment variable is missing.")
             self.is_configured = False
 
         if self.is_configured:
-            print(f"✅ Supabase Client configured for URL: {self.supabase_url[:8]}...")
             # Normalize URL to ensure no trailing slash
             self.base_url = self.supabase_url.rstrip('/')
             self.headers = {
@@ -27,106 +24,103 @@ class SupabaseClient:
                 "Prefer": "return=minimal"
             }
 
+    # --- Summary Cache Methods ---
+
     async def get_summary_by_date(self, date_str: str) -> str:
-        """
-        Fetch summary for a specific date (YYYY-MM-DD).
-        """
-        if not self.is_configured:
-            return None
-
+        """Fetch daily summary for a specific date."""
+        if not self.is_configured: return None
         url = f"{self.base_url}/rest/v1/news_summaries"
-        params = {
-            "date": f"eq.{date_str}",
-            "select": "content"
-        }
-
+        params = {"date": f"eq.{date_str}", "select": "content"}
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=self.headers, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if data and len(data) > 0:
-                            print(f"Cache HIT for {date_str}")
-                            return data[0].get("content")
+                        return data[0].get("content") if data else None
                     else:
-                        await self.log_error("db:read", f"Status {response.status}: {await response.text()}")
+                        await self.log_error("db:read_summary", f"Status {response.status}: {await response.text()}")
         except Exception as e:
-            print(f"Supabase Connection Failed: {e}")
-
-        print(f"Cache MISS for {date_str}")
+            print(f"DB Read Error: {e}")
         return None
 
     async def save_summary(self, date_str: str, content: str):
-        """
-        Save the summary to the database.
-        """
-        if not self.is_configured:
-            return
-
+        """Save daily summary."""
+        if not self.is_configured: return
         url = f"{self.base_url}/rest/v1/news_summaries"
-        payload = {
-            "date": date_str,
-            "content": content
-        }
-
-        # Prefer: resolution=merge-duplicates enables UPSERT based on Primary Key
+        payload = {"date": date_str, "content": content}
         headers = self.headers.copy()
         headers["Prefer"] = "resolution=merge-duplicates"
-
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=payload) as response:
-                    if response.status in [200, 201, 204]:
-                        print(f"Successfully saved summary for {date_str}")
-                    else:
-                        await self.log_error("db:write", f"Status {response.status}: {await response.text()}")
+                await session.post(url, headers=headers, json=payload)
         except Exception as e:
-            print(f"Supabase Save Failed: {e}")
+            print(f"DB Save Error: {e}")
 
     async def get_available_dates(self):
-        """
-        Get a list of dates that have summaries.
-        Returns a list of strings ["2024-05-20", "2024-05-19", ...]
-        """
-        if not self.is_configured:
-            return []
-
+        """Get list of dates with summaries."""
+        if not self.is_configured: return []
         url = f"{self.base_url}/rest/v1/news_summaries"
-        params = {
-            "select": "date",
-            "order": "date.desc"
-        }
-
+        params = {"select": "date", "order": "date.desc"}
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=self.headers, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
+                async with session.get(url, headers=self.headers, params=params) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
                         return [item['date'] for item in data]
-                    else:
-                        await self.log_error("db:history", f"Status {response.status}: {await response.text()}")
-        except Exception as e:
-             print(f"Supabase History Fetch Failed: {e}")
-
+        except Exception:
+            pass
         return []
 
+    # --- Article Cache Methods ---
+
+    async def get_article(self, url_key: str):
+        """Check if article exists. Returns dict {'content': ..., 'title': ...} or None."""
+        if not self.is_configured: return None
+        # URL might contain special chars, rely on params
+        api_url = f"{self.base_url}/rest/v1/articles"
+        params = {"url": f"eq.{url_key}", "select": "title,content,source"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url, headers=self.headers, params=params) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return data[0] if data else None
+        except Exception:
+            pass
+        return None
+
+    async def save_article(self, url: str, title: str, content: str, source: str, published_date: str):
+        """Save individual article."""
+        if not self.is_configured: return
+        api_url = f"{self.base_url}/rest/v1/articles"
+        payload = {
+            "url": url,
+            "title": title,
+            "content": content,
+            "source": source,
+            "published_date": published_date
+        }
+        headers = self.headers.copy()
+        headers["Prefer"] = "resolution=merge-duplicates"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(api_url, headers=headers, json=payload) as resp:
+                    if resp.status not in [200, 201, 204]:
+                         await self.log_error("db:save_article", f"Status {resp.status}")
+        except Exception:
+            pass
+
+    # --- System ---
+
     async def log_error(self, source: str, message: str):
-        """
-        Log an error to the error_logs table.
-        """
+        """Log error to DB."""
         if not self.is_configured:
             print(f"[Local Log] {source}: {message}")
             return
-
         url = f"{self.base_url}/rest/v1/error_logs"
-        payload = {
-            "source": source,
-            "message": str(message)[:1000] # Truncate if too long
-        }
-
+        payload = {"source": source, "message": str(message)[:1000]}
         try:
-            # Fire and forget-ish (we await but catch all)
             async with aiohttp.ClientSession() as session:
                 await session.post(url, headers=self.headers, json=payload)
-        except Exception as e:
-            print(f"Failed to log error to Supabase: {e}")
+        except Exception:
+            pass

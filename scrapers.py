@@ -4,7 +4,6 @@ from bs4 import BeautifulSoup
 import time
 from datetime import datetime, timezone, timedelta
 
-# 設定更完整的偽裝 Headers
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -15,248 +14,180 @@ HEADERS = {
 TZ_TW = timezone(timedelta(hours=8))
 
 def get_tw_now():
-    """Get current time in Taiwan Timezone"""
     return datetime.now(TZ_TW)
 
+def get_today_str():
+    return get_tw_now().strftime("%Y-%m-%d")
+
 def is_today_tw(date_iso_str):
-    """Check if an ISO date string corresponds to Today in Taiwan"""
-    if not date_iso_str:
-        return False
+    if not date_iso_str: return False
     try:
-        # Handle Z for UTC
-        if date_iso_str.endswith('Z'):
-            date_iso_str = date_iso_str.replace('Z', '+00:00')
-
-        # Parse ISO format
-        dt = datetime.fromisoformat(date_iso_str)
-
-        # Convert to TW time
-        dt_tw = dt.astimezone(TZ_TW)
-        now_tw = get_tw_now()
-
-        return dt_tw.date() == now_tw.date()
-    except Exception as e:
-        # Fallback to simple string check if parsing fails (though risky)
-        # print(f"Date parse error: {e} for {date_iso_str}")
+        if date_iso_str.endswith('Z'): date_iso_str = date_iso_str.replace('Z', '+00:00')
+        dt = datetime.fromisoformat(date_iso_str).astimezone(TZ_TW)
+        return dt.date() == get_tw_now().date()
+    except:
         return False
 
-async def fetch_url(session, url):
-    """Async fetch url"""
-    try:
-        async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=15)) as response:
-            if response.status == 200:
-                return await response.text()
-    except Exception as e:
-        print(f"Error fetching {url}: {e}")
+async def fetch_url_with_retry(session, url, retries=2):
+    """Fetch URL with retry mechanism."""
+    for i in range(retries + 1):
+        try:
+            async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=15)) as response:
+                if response.status == 200:
+                    return await response.text()
+                elif response.status == 404:
+                    return None # Don't retry 404
+        except Exception as e:
+            if i == retries:
+                print(f"Failed to fetch {url} after {retries} retries: {e}")
+            else:
+                await asyncio.sleep(1) # Wait 1s before retry
     return None
 
-async def get_article_content_async(session, url, content_selector=None, check_date=False):
+async def process_article_link(session, db, title, link, source, content_selector, check_date=False):
     """
-    Fetch article content with configurable selector logic.
-    content_selector: specific CSS selector for the main content (e.g., 'div.post-content').
-    If None, falls back to heuristics.
+    Process a single article link:
+    1. Check DB for content.
+    2. If miss, scrape.
+    3. Save to DB.
+    4. Return formatted string.
     """
+    # 1. Check DB
+    if db:
+        cached = await db.get_article(link)
+        if cached:
+            return f"標題: {title}\n連結: {link}\n內文: {cached['content']}\n出處: {source} (Cached)"
+
+    # 2. Scrape
     try:
-        html = await fetch_url(session, url)
+        html = await fetch_url_with_retry(session, link)
         if html:
             soup = BeautifulSoup(html, 'html.parser')
             
-            # Date Check Logic
+            # Date Check (Strict)
             if check_date:
-                is_valid_date = False
-                # 1. Try <time> tag
+                is_valid = False
                 time_tag = soup.find('time')
-                if time_tag and time_tag.get('datetime'):
-                    if is_today_tw(time_tag.get('datetime')):
-                        is_valid_date = True
+                if time_tag and time_tag.get('datetime') and is_today_tw(time_tag.get('datetime')):
+                     is_valid = True
                 
-                # 2. Try Meta tags
-                if not is_valid_date:
-                    meta_date = soup.find('meta', property='article:published_time') or \
-                                soup.find('meta', property='og:updated_time') or \
-                                soup.find('meta', itemprop='datePublished')
+                if not is_valid:
+                    # Meta tags fallback
+                    for meta_prop in ['article:published_time', 'og:updated_time', 'datePublished']:
+                        meta = soup.find('meta', property=meta_prop) or soup.find('meta', itemprop=meta_prop)
+                        if meta and meta.get('content'):
+                            c = meta.get('content')
+                            if ("T" in c and is_today_tw(c)) or c.startswith(get_today_str()):
+                                is_valid = True; break
 
-                    if meta_date and meta_date.get('content'):
-                        content_date = meta_date.get('content')
-                        if "T" in content_date:
-                             if is_today_tw(content_date):
-                                 is_valid_date = True
-                        else:
-                             today_str = get_tw_now().strftime("%Y-%m-%d")
-                             if content_date.startswith(today_str):
-                                 is_valid_date = True
+                if not is_valid: return None
 
-                if not is_valid_date:
-                    return None
+            # Content Extraction
+            container = soup.select_one(content_selector) if content_selector else soup.find('main')
+            if not container: container = soup
 
-            # Content Extraction Logic
-            target_container = None
-            if content_selector:
-                target_container = soup.select_one(content_selector)
+            text = "\n".join([p.text.strip() for p in container.find_all('p') if len(p.text.strip()) > 10])
+            content = text[:2000] + "..." if len(text) > 2000 else text
 
-            # Fallback heuristics if selector failed or not provided
-            if not target_container:
-                target_container = soup.find('main') or soup
+            if content:
+                # 3. Save to DB
+                if db:
+                    await db.save_article(link, title, content, source, get_today_str())
 
-            paragraphs = target_container.find_all('p')
-            content = "\n".join([p.text.strip() for p in paragraphs if len(p.text.strip()) > 10])
+                return f"標題: {title}\n連結: {link}\n內文: {content}\n出處: {source}"
+    except Exception as e:
+        if db: await db.log_error(f"scraper:{source}", f"Error processing {link}: {e}")
 
-            return content[:1500] + "..." if len(content) > 1500 else content
-    except Exception:
-        pass
     return None
 
-async def fetch_anduril_tw(session, db_logger=None):
-    """爬取 Anduril.tw (Selector: .post-content or similar)"""
+async def fetch_anduril_tw(session, db=None):
     url = "https://www.anduril.tw"
-    articles = []
-    today_str = get_tw_now().strftime("%Y-%m-%d")
+    tasks = []
 
-    try:
-        print(f"正在連線: {url} ...")
-        html = await fetch_url(session, url)
-        if html:
-            soup = BeautifulSoup(html, 'html.parser')
-            cards = soup.find_all('article', class_='gh-card')
+    html = await fetch_url_with_retry(session, url)
+    if html:
+        soup = BeautifulSoup(html, 'html.parser')
+        cards = soup.find_all('article', class_='gh-card')
+        for card in cards:
+            if len(tasks) >= 5: break
+            time_tag = card.find('time')
+            if time_tag and time_tag.get('datetime') != get_today_str(): continue
             
-            tasks = []
-            valid_cards = []
+            link_tag = card.find('a', class_='gh-card-link')
+            title_tag = card.find('h3', class_='gh-card-title')
 
-            for card in cards:
-                time_tag = card.find('time')
-                if time_tag and time_tag.get('datetime') != today_str:
-                    continue
+            if link_tag and title_tag:
+                title = title_tag.text.strip()
+                link = link_tag.get('href')
+                if not link.startswith('http'): link = url + link if link.startswith('/') else url + '/' + link
 
-                link_tag = card.find('a', class_='gh-card-link')
-                title_tag = card.find('h3', class_='gh-card-title')
+                if not any(x in link for x in ["tag", "category", "author"]):
+                    tasks.append(process_article_link(session, db, title, link, "Anduril", "section.gh-content", False))
 
-                if link_tag and title_tag:
-                    title = title_tag.text.strip()
-                    link = link_tag.get('href')
-                    
-                    if len(title) > 0:
-                        if not link.startswith('http'):
-                            link = url + link if link.startswith('/') else url + '/' + link
-                        if not any(d in link for d in ["tag", "category", "author"]):
-                            valid_cards.append((title, link))
+    return [x for x in await asyncio.gather(*tasks) if x]
 
-                if len(valid_cards) >= 5: break
-
-            # For Anduril (Ghost blog), content is usually in section.gh-content
-            for title, link in valid_cards:
-                 tasks.append(get_article_content_async(session, link, content_selector='section.gh-content', check_date=False))
-
-            contents = await asyncio.gather(*tasks)
-
-            for i, content in enumerate(contents):
-                if content:
-                    title, link = valid_cards[i]
-                    articles.append(f"標題: {title}\n連結: {link}\n內文: {content}\n出處: FOX")
-    except Exception as e:
-        print(f"Anduril 連線失敗: {e}")
-        if db_logger: await db_logger("scraper:anduril", str(e))
-    return articles
-
-async def fetch_blocktempo(session, db_logger=None):
-    """爬取 BlockTempo (Selector: .entry-content)"""
+async def fetch_blocktempo(session, db=None):
     url = "https://www.blocktempo.com/2026/"
-    articles = []
-    try:
-        print(f"正在連線: {url} ...")
-        html = await fetch_url(session, url)
+    tasks = []
 
-        if html:
-            soup = BeautifulSoup(html, 'html.parser')
-            candidates = soup.find_all('h3')
-
-            tasks = []
-            potential_articles = []
-
-            for item in candidates:
-                link_tag = item.find('a')
-                if link_tag and link_tag.get('href'):
-                    title = link_tag.get('title') or link_tag.text.strip()
-                    link = link_tag.get('href')
-                    if title and len(title) > 5:
-                        potential_articles.append((title, link))
-                if len(potential_articles) >= 5: break
-
-            for title, link in potential_articles:
-                # BlockTempo usually puts content in .entry-content
-                tasks.append(get_article_content_async(session, link, content_selector='.entry-content', check_date=True))
-
-            contents = await asyncio.gather(*tasks)
-
-            for i, content in enumerate(contents):
-                if content:
-                    title, link = potential_articles[i]
-                    articles.append(f"標題: {title}\n連結: {link}\n內文: {content}\n出處: 動區")
-    except Exception as e:
-        print(f"BlockTempo 連線失敗: {e}")
-        if db_logger: await db_logger("scraper:blocktempo", str(e))
-    return articles
-
-async def fetch_cnyes_stock(session, db_logger=None):
-    """爬取鉅亨網 (Selector: main)"""
-    url = "https://news.cnyes.com/news/cat/wd_stock_all"
-    articles = []
-    try:
-        print(f"正在連線: {url} ...")
-        html = await fetch_url(session, url)
-
-        if html:
-            soup = BeautifulSoup(html, 'html.parser')
-            links = soup.find_all('a', href=True)
-
-            tasks = []
-            potential_articles = []
-            seen_links = set()
-
-            for a in links:
-                href = a['href']
+    html = await fetch_url_with_retry(session, url)
+    if html:
+        soup = BeautifulSoup(html, 'html.parser')
+        for h3 in soup.find_all('h3'):
+            if len(tasks) >= 5: break
+            a = h3.find('a')
+            if a and a.get('href'):
                 title = a.get('title') or a.text.strip()
+                link = a.get('href')
+                if len(title) > 5:
+                    tasks.append(process_article_link(session, db, title, link, "BlockTempo", ".entry-content", True))
 
-                if not title:
-                    title_div = a.find('div', title=True)
-                    if title_div: title = title_div.get('title')
-                if not title:
-                    title_p = a.find('p', class_='news-title')
-                    if title_p: title = title_p.text.strip()
+    return [x for x in await asyncio.gather(*tasks) if x]
 
-                if "/news/id/" in href and title and len(title) > 5:
-                    if not href.startswith('http'):
-                        href = "https://news.cnyes.com" + href
-                    if href not in seen_links:
-                        seen_links.add(href)
-                        potential_articles.append((title, href))
-                if len(potential_articles) >= 5: break
+async def fetch_cnyes_stock(session, db=None):
+    url = "https://news.cnyes.com/news/cat/wd_stock_all"
+    tasks = []
 
-            for title, href in potential_articles:
-                # Cnyes puts content in <main>
-                tasks.append(get_article_content_async(session, href, content_selector='main', check_date=True))
+    html = await fetch_url_with_retry(session, url)
+    if html:
+        soup = BeautifulSoup(html, 'html.parser')
+        seen = set()
+        for a in soup.find_all('a', href=True):
+            if len(tasks) >= 5: break
+            href = a['href']
+            if "/news/id/" not in href: continue
 
-            contents = await asyncio.gather(*tasks)
+            title = a.get('title') or a.text.strip()
+            if not title:
+                t_div = a.find('div', title=True)
+                if t_div: title = t_div.get('title')
 
-            for i, content in enumerate(contents):
-                if content:
-                    title, href = potential_articles[i]
-                    articles.append(f"標題: {title}\n連結: {href}\n內文: {content}\n出處: 鉅亨網")
-    except Exception as e:
-        print(f"鉅亨網連線失敗: {e}")
-        if db_logger: await db_logger("scraper:cnyes", str(e))
-    return articles
+            if title and len(title) > 5:
+                if not href.startswith('http'): href = "https://news.cnyes.com" + href
+                if href not in seen:
+                    seen.add(href)
+                    tasks.append(process_article_link(session, db, title, href, "Cnyes", "main", True))
 
-async def run_all_scrapers(db_logger=None):
+    return [x for x in await asyncio.gather(*tasks) if x]
+
+async def run_all_scrapers(db_client=None, sources=None):
     """
-    Run all scrapers concurrently and return combined list.
-    Order matches the gather order: Anduril -> BlockTempo -> Cnyes.
+    Run scrapers based on sources list.
+    sources: list of strings ['anduril', 'blocktempo', 'cnyes']
     """
+    tasks = []
+
+    # Default to all if None or empty
+    if not sources:
+        sources = ['anduril', 'blocktempo', 'cnyes']
+
     async with aiohttp.ClientSession() as session:
-        # Results is a list of lists: [[anduril_items], [blocktempo_items], [cnyes_items]]
-        results = await asyncio.gather(
-            fetch_anduril_tw(session, db_logger),
-            fetch_blocktempo(session, db_logger),
-            fetch_cnyes_stock(session, db_logger)
-        )
-        # Flatten the list while preserving order
+        if 'anduril' in sources:
+            tasks.append(fetch_anduril_tw(session, db_client))
+        if 'blocktempo' in sources:
+            tasks.append(fetch_blocktempo(session, db_client))
+        if 'cnyes' in sources:
+            tasks.append(fetch_cnyes_stock(session, db_client))
+
+        results = await asyncio.gather(*tasks)
         return [item for sublist in results for item in sublist]
