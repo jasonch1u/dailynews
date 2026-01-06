@@ -201,25 +201,34 @@ async def fetch_blocktempo(session, db=None):
     return [x for x in await asyncio.gather(*tasks) if x]
 
 async def fetch_cnyes_stock(session, db=None):
-    url = "https://news.cnyes.com/news/cat/wd_stock_all"
+    # Use RSS feed to avoid client-side rendering issues and sidebar noise
+    rss_url = "https://news.cnyes.com/rss/v1/news/category/wd_stock"
     tasks = []
-    html = await fetch_url_with_retry(session, url)
-    if html:
-        soup = BeautifulSoup(html, 'html.parser')
-        seen = set()
-        for a in soup.find_all('a', href=True):
-            if len(tasks) >= 5: break
-            href = a['href']
-            if "/news/id/" not in href: continue
-            title = a.get('title') or a.text.strip()
-            if not title:
-                t_div = a.find('div', title=True)
-                if t_div: title = t_div.get('title')
-            if title and len(title) > 5:
-                if not href.startswith('http'): href = "https://news.cnyes.com" + href
-                if href not in seen:
-                    seen.add(href)
-                    tasks.append(process_article_link(session, db, title, href, "Cnyes", "main", True))
+
+    try:
+        xml = await fetch_url_with_retry(session, rss_url)
+        if xml:
+            try:
+                soup = BeautifulSoup(xml, 'xml')
+            except:
+                soup = BeautifulSoup(xml, 'html.parser')
+
+            items = soup.find_all('item')
+            for item in items[:5]: # Top 5 latest
+                title = item.title.text.strip() if item.title else "No Title"
+                link = item.link.text.strip() if item.link else ""
+                if not link and item.guid: link = item.guid.text.strip()
+
+                if link and title:
+                    # We still fetch the full article content using process_article_link
+                    # This ensures we get the full text, not just the RSS summary
+                    # And process_article_link handles the <time> tag check
+                    tasks.append(process_article_link(session, db, title, link, "Cnyes", "main", True))
+
+    except Exception as e:
+        print(f"Cnyes RSS Error: {e}")
+        if db: await db.log_error("scraper:cnyes", str(e))
+
     return [x for x in await asyncio.gather(*tasks) if x]
 
 async def fetch_cnbc(session, db=None):
