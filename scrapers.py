@@ -56,8 +56,14 @@ async def process_article_link(session, db, title, link, source, content_selecto
     if db:
         cached = await db.get_article(link)
         if cached:
-            # Return DB content
-            return f"### {cached['title']}\n{cached['content']}\n出處: {source}\nLink: {link}"
+            # Enforce date check on cached articles to prevent "yesterday's news" from appearing today
+            # If the article is cached but the date is not today, we treat it as expired for the purpose of "Daily Summary"
+            cached_date = cached.get('published_date')
+            if cached_date == get_today_str():
+                # Return DB content
+                return f"### {cached['title']}\n{cached['content']}\n出處: {source}\nLink: {link}"
+            # If date doesn't match today, we skip returning it (and likely don't need to re-scrape if it's old)
+            return None
 
     try:
         html = await fetch_url_with_retry(session, link)
@@ -128,11 +134,29 @@ async def fetch_rss_feed(session, db, url, source_name, translate=False, allow_e
                 link = item.link.text.strip() if item.link else ""
                 if not link and item.guid: link = item.guid.text.strip()
 
+                # Check RSS PubDate
+                pub_date_str = item.pubDate.text.strip() if item.pubDate else None
+                if pub_date_str:
+                    # RSS Date Format: "Tue, 06 Jan 2026 22:00:03 +0800" or similar
+                    try:
+                        # Try parsing common RSS formats
+                        pd = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %z")
+                        # Convert to TW time
+                        pd_tw = pd.astimezone(TZ_TW)
+                        if pd_tw.date() != get_tw_now().date():
+                            continue # Skip if not today
+                    except ValueError:
+                        # If format doesn't match, we might skip strict check or try other formats
+                        # For now, let's just log and proceed (or skip strict check to avoid losing data)
+                        pass
+
                 # Check DB first
                 if db:
                     cached = await db.get_article(link)
                     if cached:
-                        articles.append(f"### {cached['title']}\n{cached['content']}\n出處: {source_name}\nLink: {link}")
+                        # Validate cached date
+                        if cached.get('published_date') == get_today_str():
+                            articles.append(f"### {cached['title']}\n{cached['content']}\n出處: {source_name}\nLink: {link}")
                         continue
 
                 description = item.description.text.strip() if item.description else ""

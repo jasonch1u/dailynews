@@ -64,7 +64,7 @@ class SupabaseClient:
     async def get_article(self, url_key: str):
         if not self.is_configured: return None
         api_url = f"{self.base_url}/rest/v1/articles"
-        params = {"url": f"eq.{url_key}", "select": "title,content,source"}
+        params = {"url": f"eq.{url_key}", "select": "title,content,source,published_date"}
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url, headers=self.headers, params=params) as resp:
