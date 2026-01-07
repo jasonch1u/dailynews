@@ -597,23 +597,44 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             // It captures the whole block to replace it.
             // Note: This is tricky with regex. We'll do a custom pass for this specific section structure.
 
+            // --- Helper: Collapse Related Reports List into Chips ---
+            // Pattern to find: **相關報導**:\n- [Source] [Title](Link)\n...
+            // OR Pattern with simple links: - [Source] <a href="...">Title</a> (if AI outputs raw HTML, which is unlikely but possible)
+            // AI Output: - [Source] [Title](Link)
+
+            // The user wants: [Source] (clickable link with Source text)
+            // Our previous regex constructed: <a href="Link" ...>Source</a>
+            // If the user says it shows "brackets", maybe the AI is outputting literal brackets or the regex failed.
+            // Let's make the Regex more robust to spaces and newlines.
+
+            // Regex to match the entire "Related Reports" block until the next double newline or Header
             const relatedSectionRegex = /(\*\*相關報導\*\*[:：]?\s*\n(?:-\s*\[.*?\]\s*\[.*?\]\(.*?\)\s*\n?)+)/g;
 
             markdown = markdown.replace(relatedSectionRegex, (match) => {
-                // Parse individual lines
                 const lines = match.split('\n').filter(l => l.trim().startsWith('-'));
                 let html = '<div class="related-reports-container"><span class="related-label">相關報導:</span>';
 
                 lines.forEach(line => {
-                    // Match: - [Source] [Title](Link)
+                    // Robust match for: - [Source] [Title](Link)
+                    // We use non-greedy matching `.*?`
                     const itemRegex = /-\s*\[(.*?)\]\s*\[(.*?)\]\((.*?)\)/;
                     const itemMatch = line.match(itemRegex);
                     if (itemMatch) {
                         const src = itemMatch[1];
-                        const title = itemMatch[2]; // Unused in badge-only mode, or could be tooltip
+                        const title = itemMatch[2];
                         const link = itemMatch[3];
                         const cls = getSourceClass(src);
-                        html += `<a href="${link}" target="_blank" class="article-source ${cls}" title="${title}">${src}</a>`;
+                        // User wants: "Click news title to jump" -> "改用新聞標題直接下超連結"
+                        // Wait, user said: "這個連結的部分會讓版面看起來很長... 有辦法改用新聞標題直接下超連結嗎?"
+                        // User's example of bad output: `[Cnyes] Title](Link)` showing brackets.
+                        // User's desired output: Just the Title as a link?
+                        // "改用新聞標題直接下超連結" means: <a href="Link">Title</a>
+
+                        // BUT, earlier I implemented "Chips" (Source Name as Link).
+                        // Let's respect the LAST request: "改用新聞標題直接下超連結"
+                        // This means we should render: [Source Badge] <a href="Link">Title</a>
+
+                        html += `<span class="article-source ${cls}" style="margin-right:4px">${src}</span><a href="${link}" target="_blank" style="margin-right:12px; font-size:0.9em;">${title}</a>`;
                     }
                 });
 
