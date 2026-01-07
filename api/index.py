@@ -67,7 +67,10 @@ async def summarize_news_endpoint(
     target_date = date if date else today_str
 
     # Defaults
-    all_sources = {'anduril', 'blocktempo', 'cnyes', 'cnbc', 'seekingalpha', 'marketwatch'}
+    all_sources = {
+        'anduril', 'blocktempo', 'cnyes', 'cnbc', 'seekingalpha', 'marketwatch',
+        'bbc', 'cnn', 'techcrunch', 'forbes', 'businessinsider', 'axios', 'nyt', 'reuters'
+    }
     if sources:
         source_list = [s.strip().lower() for s in sources.split(',') if s.strip().lower() in all_sources]
     else:
@@ -158,11 +161,12 @@ async def summarize_news_endpoint(
 
         # Check for errors in summary (it returns string starting with "Error" or "Exception" on fail)
         if summary and not summary.startswith("Error") and not summary.startswith("Exception"):
-             # Save to Cache ONLY if it's the full default set
+             # Save to Cache if it's the full default set OR if it's a manual refresh (user forced update)
              is_default_set = set(source_list) == all_sources
+
              # Note: We now save versions instead of overwriting.
              # We pass the prompt used for record keeping.
-             if is_default_set:
+             if is_default_set or refresh:
                   await db.save_summary(today_str, summary, prompt_used)
         else:
              await db.log_error("api:gemini", f"Gen Failed: {summary}")

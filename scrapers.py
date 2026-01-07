@@ -280,32 +280,32 @@ async def fetch_marketwatch(session, db=None):
 
 # New fetch functions for additional sources
 async def fetch_bbc(session, db=None):
-    return await fetch_rss_feed(session, db, "http://feeds.bbci.co.uk/news/rss.xml", "BBC")
+    return await fetch_rss_feed(session, db, "http://feeds.bbci.co.uk/news/rss.xml", "BBC", translate=True)
 
 async def fetch_cnn(session, db=None):
-    return await fetch_rss_feed(session, db, "http://rss.cnn.com/rss/edition.rss", "CNN")
+    return await fetch_rss_feed(session, db, "http://rss.cnn.com/rss/edition.rss", "CNN", translate=True)
 
 async def fetch_techcrunch(session, db=None):
-    return await fetch_rss_feed(session, db, "https://techcrunch.com/feed/", "TechCrunch")
+    return await fetch_rss_feed(session, db, "https://techcrunch.com/feed/", "TechCrunch", translate=True)
 
 async def fetch_forbes(session, db=None):
-    return await fetch_rss_feed(session, db, "https://www.forbes.com/most-popular/feed/", "Forbes")
+    return await fetch_rss_feed(session, db, "https://www.forbes.com/most-popular/feed/", "Forbes", translate=True)
 
 async def fetch_business_insider(session, db=None):
-    return await fetch_rss_feed(session, db, "https://feeds.businessinsider.com/custom/all", "BusinessInsider")
+    return await fetch_rss_feed(session, db, "https://feeds.businessinsider.com/custom/all", "BusinessInsider", translate=True)
 
 async def fetch_axios(session, db=None):
-    return await fetch_rss_feed(session, db, "https://api.axios.com/feed/", "Axios")
+    return await fetch_rss_feed(session, db, "https://api.axios.com/feed/", "Axios", translate=True)
 
 async def fetch_nyt(session, db=None):
-    return await fetch_rss_feed(session, db, "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml", "NYT")
+    return await fetch_rss_feed(session, db, "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml", "NYT", translate=True)
 
 async def fetch_reuters(session, db=None):
     # Reuters public RSS is deprecated. Using Google News RSS proxy for Reuters.
     url = "https://news.google.com/rss/search?q=site:reuters.com+when:1d&hl=en-US&gl=US&ceid=US:en"
     # Google News RSS items link to google redirects, but fetch_rss_feed stores the link.
     # process_article_link follows redirects usually? aiohttp follows redirects by default.
-    return await fetch_rss_feed(session, db, url, "Reuters")
+    return await fetch_rss_feed(session, db, url, "Reuters", translate=True)
 
 async def run_all_scrapers(db_client=None, sources=None):
     """
