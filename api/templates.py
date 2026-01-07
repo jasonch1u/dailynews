@@ -500,7 +500,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             }
 
             btn.disabled = true;
-            status.innerHTML = `<span class="loader"></span> ${historyDate ? '正在讀取資料庫摘要...' : (forceLive ? '正在即時掃描與分析最新內容 (約需 20-30 秒)...' : '正在讀取最新摘要...')}`;
+            status.innerHTML = `<span class="loader"></span> ${historyDate ? '正在讀取資料庫摘要...' : (forceLive ? '正在連線中...' : '正在讀取最新摘要...')}`;
             content.style.opacity = '0.5';
 
             try {
@@ -510,7 +510,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 if (historyDate) {
                     params.append('date', historyDate);
                 } else {
-                    // Today / No Date selected
                     if (sources) params.append('sources', sources);
                     if (forceLive) params.append('refresh', 'true');
                 }
@@ -527,18 +526,59 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     return;
                 }
 
-                const data = await res.json();
+                // If content-type is text/event-stream, handle streaming
+                const contentType = res.headers.get("content-type");
+                if (contentType && contentType.includes("text/event-stream")) {
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = "";
 
-                if (data.markdown) {
-                    // 1. Pre-process markdown to inject HTML badges
-                    const processedMarkdown = formatMarkdownWithBadges(data.markdown);
-                    // 2. Parse Markdown
-                    content.innerHTML = marked.parse(processedMarkdown);
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        const chunk = decoder.decode(value, { stream: true });
+                        buffer += chunk;
 
-                    status.innerHTML = `✅ 完成！ (來源: ${data.source === 'cache' ? '資料庫快取' : '即時生成'})`;
-                    status.style.color = 'green';
+                        // Split by double newline to get events
+                        const parts = buffer.split("\n\n");
+                        buffer = parts.pop(); // Keep last incomplete part
+
+                        for (const part of parts) {
+                            if (part.startsWith("data: ")) {
+                                const jsonStr = part.substring(6);
+                                try {
+                                    const data = JSON.parse(jsonStr);
+                                    if (data.status) {
+                                        // Update Status Bar
+                                        status.innerHTML = `<span class="loader"></span> ${data.status}`;
+                                    } else if (data.markdown) {
+                                        // Final Result
+                                        const processedMarkdown = formatMarkdownWithBadges(data.markdown);
+                                        content.innerHTML = marked.parse(processedMarkdown);
+                                        status.innerHTML = `✅ 完成！ (來源: ${data.source === 'cache' ? '資料庫快取' : '即時生成'})`;
+                                        status.style.color = 'green';
+                                    } else if (data.error) {
+                                        status.innerHTML = `❌ ${data.error}`;
+                                        content.innerHTML = `<p style="color:red">錯誤: ${data.details}</p>`;
+                                    }
+                                } catch (e) {
+                                    console.error("Parse error", e);
+                                }
+                            }
+                        }
+                    }
+
                 } else {
-                    status.innerHTML = '❌ 發生錯誤';
+                    // Standard JSON response (cached)
+                    const data = await res.json();
+                    if (data.markdown) {
+                        const processedMarkdown = formatMarkdownWithBadges(data.markdown);
+                        content.innerHTML = marked.parse(processedMarkdown);
+                        status.innerHTML = `✅ 完成！ (來源: ${data.source === 'cache' ? '資料庫快取' : '即時生成'})`;
+                        status.style.color = 'green';
+                    } else {
+                        status.innerHTML = '❌ 發生錯誤';
+                    }
                 }
 
                 if (forceLive) {

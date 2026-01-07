@@ -1,9 +1,10 @@
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 import aiohttp
 import os
 import asyncio
+import json
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from dotenv import load_dotenv
@@ -62,6 +63,9 @@ async def summarize_news_endpoint(
     - date: YYYY-MM-DD. If provided, STRICT READ ONLY from Cache.
     - refresh: If True, forces live generation (scrapers + AI) and updates cache for TODAY.
     - sources: Optional filter for sources (only used during live generation).
+
+    Returns:
+        JSONResponse (for cached content) OR StreamingResponse (for live generation).
     """
     today_str = datetime.now(TZ_TW).strftime("%Y-%m-%d")
     target_date = date if date else today_str
@@ -78,9 +82,6 @@ async def summarize_news_endpoint(
     if not source_list: source_list = list(all_sources)
 
     # 1. READ MODE (If date provided OR (Not refreshing and Cache exists))
-    # If date is specifically provided, we ONLY read from cache. We never scrape for historical dates.
-    # If date is NOT provided (today), we check cache first. If refresh=True, we skip this.
-
     should_check_cache = True
     if not date and refresh:
         should_check_cache = False
@@ -96,7 +97,6 @@ async def summarize_news_endpoint(
                 return JSONResponse(status_code=404, content={"markdown": f"⚠️ 找不到 {target_date} 的歷史摘要。", "date": target_date})
         except Exception as e:
             print(f"DB Error: {e}")
-            # If DB fails, we might fall through to live generation ONLY if it's today and not a specific date query
             if date: raise HTTPException(status_code=500, detail="DB Error")
 
     # 2. GENERATE MODE (Live) - Only allowed for TODAY (date=None)
@@ -106,79 +106,71 @@ async def summarize_news_endpoint(
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key: raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing")
 
-    try:
-        # Run Scrapers
-        # 30s timeout for scrapers
-        # We don't use the return value 'articles' directly for summary anymore.
-        # We assume scrapers populate the DB with today's articles.
-        await asyncio.wait_for(run_all_scrapers(db, source_list), timeout=30.0)
+    async def summary_generator():
+        try:
+            # Step 1: Scrapers
+            yield f"data: {json.dumps({'status': '正在連線至各國新聞來源...', 'step': 1})}\n\n"
 
-        # Fetch ALL articles for today from DB to ensure AI uses everything available
-        # (including those scraped in previous runs today or by other instances)
-        # Note: get_articles_by_date returns a list of dicts, we need to format them for AI.
-        # But get_articles_by_date in db.py currently selects only 'title,url,source,published_date'
-        # We need CONTENT.
-        # So we should probably add a new DB method or modify the scraper to return the full objects
-        # OR just use what scrapers returned but filter strictly?
-        # The user requested: "改用DB articles裡面，台灣時間當天的所有文章去給AI分析"
-        # So we MUST fetch from DB.
-
-        # We need a way to fetch full content for today's articles.
-        # Let's add a helper or use a new query.
-        # Since we can't easily modify DB client interface in this block without touching db.py again,
-        # let's assume we can add a method to DB client or use raw SQL? No, we use REST.
-        # We need to fetch 'content' column.
-
-        # Let's define a local helper to fetch full articles for today
-        async def fetch_todays_full_articles():
-            url = f"{db.base_url}/rest/v1/articles"
-            params = {
-                "published_date": f"eq.{today_str}",
-                "select": "title,content,source,url"
-            }
+            # Run Scrapers (30s timeout)
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, headers=db.headers, params=params) as resp:
-                        if resp.status == 200:
-                            return await resp.json()
-            except: pass
-            return []
+                await asyncio.wait_for(run_all_scrapers(db, source_list), timeout=30.0)
+            except asyncio.TimeoutError:
+                await db.log_error("api:timeout", "Timeout during scraping")
+                # Continue anyway to see if we have DB data
 
-        todays_articles = await fetch_todays_full_articles()
+            # Step 2: DB Fetch
+            yield f"data: {json.dumps({'status': '正在從資料庫彙整今日文章...', 'step': 2})}\n\n"
 
-        if not todays_articles:
-             # If scraping yielded nothing and DB is empty for today
-             cached = await db.get_summary_by_date(today_str)
-             if cached:
-                 return JSONResponse(content={"markdown": cached + "\n\n(註：最新嘗試抓取未獲得新文章，顯示庫存摘要)", "source": "cache_fallback", "date": today_str})
-             return JSONResponse(content={"markdown": "⚠️ 今日尚未有符合條件的新聞 (且無歷史存檔)。", "date": today_str})
+            # Helper to fetch content
+            async def fetch_todays_full_articles():
+                url = f"{db.base_url}/rest/v1/articles"
+                params = {
+                    "published_date": f"eq.{today_str}",
+                    "select": "title,content,source,url"
+                }
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, headers=db.headers, params=params) as resp:
+                            if resp.status == 200:
+                                return await resp.json()
+                except: pass
+                return []
 
-        # Format for AI
-        full_text = "\n".join([f"### {a['title']}\n{a['content']}\n出處: {a['source']}\nLink: {a['url']}" for a in todays_articles])
+            todays_articles = await fetch_todays_full_articles()
 
-        # Generate Summary
-        summary, prompt_used = await generate_daily_summary(full_text, api_key)
+            if not todays_articles:
+                 # Try fallback to cache
+                 cached = await db.get_summary_by_date(today_str)
+                 if cached:
+                     yield f"data: {json.dumps({'markdown': cached + '\n\n(註：最新嘗試抓取未獲得新文章，顯示庫存摘要)', 'source': 'cache_fallback', 'date': today_str})}\n\n"
+                     return
 
-        # Check for errors in summary (it returns string starting with "Error" or "Exception" on fail)
-        if summary and not summary.startswith("Error") and not summary.startswith("Exception"):
-             # Save to Cache if it's the full default set OR if it's a manual refresh (user forced update)
-             is_default_set = set(source_list) == all_sources
+                 yield f"data: {json.dumps({'markdown': '⚠️ 今日尚未有符合條件的新聞 (且無歷史存檔)。', 'date': today_str})}\n\n"
+                 return
 
-             # Note: We now save versions instead of overwriting.
-             # We pass the prompt used for record keeping.
-             if is_default_set or refresh:
-                  await db.save_summary(today_str, summary, prompt_used)
-        else:
-             await db.log_error("api:gemini", f"Gen Failed: {summary}")
+            # Step 3: AI Generation
+            yield f"data: {json.dumps({'status': 'AI 正在分析市場趨勢並撰寫報告 (請稍候)...', 'step': 3})}\n\n"
 
-        return JSONResponse(content={"markdown": summary, "source": "live_update", "date": today_str})
+            full_text = "\n".join([f"### {a['title']}\n{a['content']}\n出處: {a['source']}\nLink: {a['url']}" for a in todays_articles])
 
-    except asyncio.TimeoutError:
-        await db.log_error("api:timeout", "Timeout during scraping")
-        raise HTTPException(status_code=504, detail="Timeout")
-    except Exception as e:
-        await db.log_error("api:error", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+            summary, prompt_used = await generate_daily_summary(full_text, api_key)
+
+            if summary and not summary.startswith("Error") and not summary.startswith("Exception"):
+                 is_default_set = set(source_list) == all_sources
+                 if is_default_set or refresh:
+                      await db.save_summary(today_str, summary, prompt_used)
+
+                 # Step 4: Final Result
+                 yield f"data: {json.dumps({'markdown': summary, 'source': 'live_update', 'date': today_str})}\n\n"
+            else:
+                 await db.log_error("api:gemini", f"Gen Failed: {summary}")
+                 yield f"data: {json.dumps({'error': 'AI 生成失敗', 'details': summary})}\n\n"
+
+        except Exception as e:
+            await db.log_error("api:error", str(e))
+            yield f"data: {json.dumps({'error': '系統發生錯誤', 'details': str(e)})}\n\n"
+
+    return StreamingResponse(summary_generator(), media_type="text/event-stream")
 
 @app.get("/")
 @app.get("")
