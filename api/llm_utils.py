@@ -82,7 +82,8 @@ async def generate_daily_summary(articles_text: str, api_key: str):
     - 請確保所有連結都能正確對應。
     """
 
-    return await call_gemini(prompt_text, api_key)
+    summary = await call_gemini(prompt_text, api_key)
+    return summary, prompt_text
 
 async def translate_text(text_list: list, api_key: str) -> list:
     """

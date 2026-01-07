@@ -154,14 +154,16 @@ async def summarize_news_endpoint(
         full_text = "\n".join([f"### {a['title']}\n{a['content']}\n出處: {a['source']}\nLink: {a['url']}" for a in todays_articles])
 
         # Generate Summary
-        summary = await generate_daily_summary(full_text, api_key)
+        summary, prompt_used = await generate_daily_summary(full_text, api_key)
 
         # Check for errors in summary (it returns string starting with "Error" or "Exception" on fail)
         if summary and not summary.startswith("Error") and not summary.startswith("Exception"):
              # Save to Cache ONLY if it's the full default set
              is_default_set = set(source_list) == all_sources
+             # Note: We now save versions instead of overwriting.
+             # We pass the prompt used for record keeping.
              if is_default_set:
-                  await db.save_summary(today_str, summary)
+                  await db.save_summary(today_str, summary, prompt_used)
         else:
              await db.log_error("api:gemini", f"Gen Failed: {summary}")
 
