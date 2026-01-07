@@ -152,13 +152,31 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             .header-controls { flex-wrap: wrap; justify-content: center; }
         }
 
-        /* Status Bar */
-        #status {
+        /* Status Bar and Progress */
+        #status-container {
+            max-width: 600px;
+            margin: 10px auto 20px auto;
             text-align: center;
-            margin: 10px 0 20px 0;
+        }
+        #status-text {
             font-weight: 500;
             color: #666;
             min-height: 24px;
+            margin-bottom: 8px;
+        }
+        #progress-bar-container {
+            width: 100%;
+            height: 4px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            display: none; /* Hidden by default */
+        }
+        #progress-bar {
+            width: 0%;
+            height: 100%;
+            background-color: var(--primary-color);
+            transition: width 0.5s ease-in-out;
         }
 
         /* Content Styles */
@@ -255,6 +273,35 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             margin-right: 5px;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Toast Notification */
+        #toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 2000;
+        }
+        .toast {
+            background-color: #333;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: all 0.3s ease;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .toast.success { background-color: #198754; }
+        .toast.error { background-color: #dc3545; }
+        .toast.info { background-color: #0d6efd; }
     </style>
 </head>
 <body>
@@ -297,7 +344,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         </div>
     </header>
 
-    <div id="status"></div>
+    <div id="status-container">
+        <div id="status-text"></div>
+        <div id="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
 
     <div class="main-container">
         <!-- AI Summary Area -->
@@ -327,6 +381,48 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             breaks: true,
             gfm: true
         });
+
+        // Toast Function
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerText = message;
+
+            container.appendChild(toast);
+
+            // Trigger animation
+            setTimeout(() => toast.classList.add('show'), 10);
+
+            // Remove after 3s
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function updateProgress(step, text) {
+            const barContainer = document.getElementById('progress-bar-container');
+            const bar = document.getElementById('progress-bar');
+            const statusText = document.getElementById('status-text');
+
+            statusText.innerHTML = `<span class="loader"></span> ${text}`;
+            barContainer.style.display = 'block';
+
+            // Map steps to percentage
+            let pct = 0;
+            if (step === 1) pct = 30; // Scrapers
+            else if (step === 2) pct = 60; // DB
+            else if (step === 3) pct = 90; // AI
+            else if (step === 4) pct = 100; // Done
+
+            bar.style.width = `${pct}%`;
+        }
+
+        function hideProgress() {
+            document.getElementById('progress-bar-container').style.display = 'none';
+            document.getElementById('status-text').innerText = '';
+        }
 
         window.addEventListener('DOMContentLoaded', async () => {
             await loadHistoryDates();
@@ -487,7 +583,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         async function fetchSummary(forceLive = false) {
             const btn = document.getElementById('generateBtn');
-            const status = document.getElementById('status');
+            const statusText = document.getElementById('status-text');
             const content = document.getElementById('content');
             let historyDate = document.getElementById('historySelect').value;
 
@@ -503,13 +599,19 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             const sources = Array.from(checkboxes).map(cb => cb.value).join(',');
 
             if (!historyDate && sources.length === 0) {
-                alert("請至少選擇一個新聞來源！");
+                showToast("請至少選擇一個新聞來源！", "error");
                 return;
             }
 
             btn.disabled = true;
-            status.innerHTML = `<span class="loader"></span> ${historyDate ? '正在讀取資料庫摘要...' : (forceLive ? '正在連線中...' : '正在讀取最新摘要...')}`;
             content.style.opacity = '0.5';
+
+            // Initial Status
+            if (forceLive) {
+                updateProgress(0, "準備開始...");
+            } else {
+                statusText.innerHTML = `<span class="loader"></span> 正在讀取摘要...`;
+            }
 
             try {
                 let url = '/api/summarize';
@@ -530,7 +632,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     } else {
                          content.innerHTML = '<div style="text-align: center; margin-top: 50px;"><h3>⚠️ 尚無摘要</h3><p>今日尚未生成摘要，請點擊右上方「更新今日摘要」按鈕。</p></div>';
                     }
-                    status.innerHTML = '';
+                    hideProgress();
                     return;
                 }
 
@@ -557,17 +659,20 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                                 try {
                                     const data = JSON.parse(jsonStr);
                                     if (data.status) {
-                                        // Update Status Bar
-                                        status.innerHTML = `<span class="loader"></span> ${data.status}`;
+                                        // Update Progress Bar
+                                        updateProgress(data.step, data.status);
                                     } else if (data.markdown) {
                                         // Final Result
+                                        updateProgress(4, "完成！");
                                         const processedMarkdown = formatMarkdownWithBadges(data.markdown);
                                         content.innerHTML = marked.parse(processedMarkdown);
-                                        status.innerHTML = `✅ 完成！ (來源: ${data.source === 'cache' ? '資料庫快取' : '即時生成'})`;
-                                        status.style.color = 'green';
+
+                                        showToast(`✅ 更新成功 (來源: ${data.source === 'cache' ? '資料庫' : '即時'})`, "success");
+                                        setTimeout(hideProgress, 2000);
                                     } else if (data.error) {
-                                        status.innerHTML = `❌ ${data.error}`;
+                                        showToast(`❌ ${data.error}`, "error");
                                         content.innerHTML = `<p style="color:red">錯誤: ${data.details}</p>`;
+                                        hideProgress();
                                     }
                                 } catch (e) {
                                     console.error("Parse error", e);
@@ -582,10 +687,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     if (data.markdown) {
                         const processedMarkdown = formatMarkdownWithBadges(data.markdown);
                         content.innerHTML = marked.parse(processedMarkdown);
-                        status.innerHTML = `✅ 完成！ (來源: ${data.source === 'cache' ? '資料庫快取' : '即時生成'})`;
-                        status.style.color = 'green';
+                        statusText.innerHTML = ""; // Clear loader
+                        showToast(`✅ 讀取成功`, "success");
                     } else {
-                        status.innerHTML = '❌ 發生錯誤';
+                        showToast('❌ 發生錯誤', "error");
                     }
                 }
 
@@ -595,7 +700,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
             } catch (error) {
                 console.error(error);
-                status.innerHTML = `❌ 錯誤: ${error.message}`;
+                showToast(`❌ 連線錯誤: ${error.message}`, "error");
+                hideProgress();
             } finally {
                 btn.disabled = false;
                 content.style.opacity = '1';
