@@ -79,7 +79,9 @@ class SupabaseClient:
                 async with session.get(url, headers=self.headers, params=params) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        return [item['date'] for item in data]
+                        # Deduplicate while preserving order (Python 3.7+ dicts preserve insertion order)
+                        dates = [item['date'] for item in data]
+                        return list(dict.fromkeys(dates))
         except Exception: pass
         return []
 
