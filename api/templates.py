@@ -195,8 +195,15 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         #content .source-cnbc { background: #20c997; }
         #content .source-seekingalpha { background: #ffc107; color: #333 !important; }
         #content .source-marketwatch { background: #6610f2; }
-        /* Add new source names just in case, or map old classes to new names if using regex replacement */
         #content .source-fox { background: #0d6efd; }
+        #content .source-bbc { background: #b80000; }
+        #content .source-cnn { background: #cc0000; }
+        #content .source-techcrunch { background: #00a562; }
+        #content .source-forbes { background: #333333; }
+        #content .source-businessinsider { background: #1c1c1c; }
+        #content .source-axios { background: #2251ff; }
+        #content .source-nyt { background: #000000; }
+        #content .source-reuters { background: #ff8000; }
 
         /* Article List Sidebar */
         #articleList {
@@ -272,7 +279,16 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     <hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
                     <label><input type="checkbox" value="cnbc" checked> CNBC (World)</label>
                     <label><input type="checkbox" value="seekingalpha" checked> Seeking Alpha</label>
-                    <label><input type="checkbox" value="marketwatch" checked> MarketWatch</label>
+                    <label><input type="checkbox" value="marketwatch"> MarketWatch</label>
+                    <hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
+                    <label><input type="checkbox" value="bbc" checked> BBC</label>
+                    <label><input type="checkbox" value="cnn" checked> CNN</label>
+                    <label><input type="checkbox" value="reuters" checked> Reuters</label>
+                    <label><input type="checkbox" value="nyt" checked> NYT</label>
+                    <label><input type="checkbox" value="techcrunch" checked> TechCrunch</label>
+                    <label><input type="checkbox" value="forbes" checked> Forbes</label>
+                    <label><input type="checkbox" value="axios" checked> Axios</label>
+                    <label><input type="checkbox" value="businessinsider" checked> Business Insider</label>
                 </div>
             </div>
 
@@ -398,6 +414,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                             else if(s.includes('cnbc')) sourceColor = '#20c997';
                             else if(s.includes('seekingalpha')) sourceColor = '#ffc107';
                             else if(s.includes('marketwatch')) sourceColor = '#6610f2';
+                            else if(s.includes('bbc')) sourceColor = '#b80000';
+                            else if(s.includes('cnn')) sourceColor = '#cc0000';
+                            else if(s.includes('reuters')) sourceColor = '#ff8000';
+                            else if(s.includes('nyt')) sourceColor = '#000000';
+                            else if(s.includes('techcrunch')) sourceColor = '#00a562';
+                            else if(s.includes('forbes')) sourceColor = '#333333';
+                            else if(s.includes('axios')) sourceColor = '#2251ff';
+                            else if(s.includes('businessinsider')) sourceColor = '#1c1c1c';
 
                             html += `
                             <div class="article-item">
@@ -434,6 +458,14 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 if(s.includes('cnbc')) return 'source-cnbc';
                 if(s.includes('seeking') || s.includes('alpha')) return 'source-seekingalpha';
                 if(s.includes('marketwatch')) return 'source-marketwatch';
+                if(s.includes('bbc')) return 'source-bbc';
+                if(s.includes('cnn')) return 'source-cnn';
+                if(s.includes('reuters')) return 'source-reuters';
+                if(s.includes('nyt')) return 'source-nyt';
+                if(s.includes('techcrunch')) return 'source-techcrunch';
+                if(s.includes('forbes')) return 'source-forbes';
+                if(s.includes('axios')) return 'source-axios';
+                if(s.includes('businessinsider')) return 'source-businessinsider';
                 return 'source-default';
             };
 

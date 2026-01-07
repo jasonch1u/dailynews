@@ -56,8 +56,14 @@ async def process_article_link(session, db, title, link, source, content_selecto
     if db:
         cached = await db.get_article(link)
         if cached:
-            # Return DB content
-            return f"### {cached['title']}\n{cached['content']}\n出處: {source}\nLink: {link}"
+            # Enforce date check on cached articles to prevent "yesterday's news" from appearing today
+            # If the article is cached but the date is not today, we treat it as expired for the purpose of "Daily Summary"
+            cached_date = cached.get('published_date')
+            if cached_date == get_today_str():
+                # Return DB content
+                return f"### {cached['title']}\n{cached['content']}\n出處: {source}\nLink: {link}"
+            # If date doesn't match today, we skip returning it (and likely don't need to re-scrape if it's old)
+            return None
 
     try:
         html = await fetch_url_with_retry(session, link)
@@ -123,16 +129,34 @@ async def fetch_rss_feed(session, db, url, source_name, translate=False, allow_e
                 soup = BeautifulSoup(xml, 'html.parser')
 
             items = soup.find_all('item')
-            for item in items[:5]: # Top 5
+            for item in items[:10]: # Top 10
                 title = item.title.text.strip() if item.title else "No Title"
                 link = item.link.text.strip() if item.link else ""
                 if not link and item.guid: link = item.guid.text.strip()
+
+                # Check RSS PubDate
+                pub_date_str = item.pubDate.text.strip() if item.pubDate else None
+                if pub_date_str:
+                    # RSS Date Format: "Tue, 06 Jan 2026 22:00:03 +0800" or similar
+                    try:
+                        # Try parsing common RSS formats
+                        pd = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %z")
+                        # Convert to TW time
+                        pd_tw = pd.astimezone(TZ_TW)
+                        if pd_tw.date() != get_tw_now().date():
+                            continue # Skip if not today
+                    except ValueError:
+                        # If format doesn't match, we might skip strict check or try other formats
+                        # For now, let's just log and proceed (or skip strict check to avoid losing data)
+                        pass
 
                 # Check DB first
                 if db:
                     cached = await db.get_article(link)
                     if cached:
-                        articles.append(f"### {cached['title']}\n{cached['content']}\n出處: {source_name}\nLink: {link}")
+                        # Validate cached date
+                        if cached.get('published_date') == get_today_str():
+                            articles.append(f"### {cached['title']}\n{cached['content']}\n出處: {source_name}\nLink: {link}")
                         continue
 
                 description = item.description.text.strip() if item.description else ""
@@ -176,7 +200,7 @@ async def fetch_anduril_tw(session, db=None):
         soup = BeautifulSoup(html, 'html.parser')
         cards = soup.find_all('article', class_='gh-card')
         for card in cards:
-            if len(tasks) >= 5: break
+            if len(tasks) >= 10: break
             time_tag = card.find('time')
             if time_tag and time_tag.get('datetime') != get_today_str(): continue
             link_tag = card.find('a', class_='gh-card-link')
@@ -197,7 +221,7 @@ async def fetch_blocktempo(session, db=None):
     if html:
         soup = BeautifulSoup(html, 'html.parser')
         for h3 in soup.find_all('h3'):
-            if len(tasks) >= 5: break
+            if len(tasks) >= 10: break
             a = h3.find('a')
             if a and a.get('href'):
                 title = a.get('title') or a.text.strip()
@@ -221,7 +245,7 @@ async def fetch_cnyes_stock(session, db=None):
                 soup = BeautifulSoup(xml, 'html.parser')
 
             items = soup.find_all('item')
-            for item in items[:5]: # Top 5 latest
+            for item in items[:10]: # Top 10 latest
                 title = item.title.text.strip() if item.title else "No Title"
                 link = item.link.text.strip() if item.link else ""
                 if not link and item.guid: link = item.guid.text.strip()
@@ -254,24 +278,69 @@ async def fetch_seeking_alpha(session, db=None):
 async def fetch_marketwatch(session, db=None):
     return await fetch_rss_feed(session, db, "https://feeds.content.dowjones.io/public/rss/mw_topstories", "MarketWatch", translate=True)
 
+# New fetch functions for additional sources
+async def fetch_bbc(session, db=None):
+    return await fetch_rss_feed(session, db, "http://feeds.bbci.co.uk/news/rss.xml", "BBC", translate=True)
+
+async def fetch_cnn(session, db=None):
+    return await fetch_rss_feed(session, db, "http://rss.cnn.com/rss/edition.rss", "CNN", translate=True)
+
+async def fetch_techcrunch(session, db=None):
+    return await fetch_rss_feed(session, db, "https://techcrunch.com/feed/", "TechCrunch", translate=True)
+
+async def fetch_forbes(session, db=None):
+    return await fetch_rss_feed(session, db, "https://www.forbes.com/most-popular/feed/", "Forbes", translate=True)
+
+async def fetch_business_insider(session, db=None):
+    return await fetch_rss_feed(session, db, "https://feeds.businessinsider.com/custom/all", "BusinessInsider", translate=True)
+
+async def fetch_axios(session, db=None):
+    return await fetch_rss_feed(session, db, "https://api.axios.com/feed/", "Axios", translate=True)
+
+async def fetch_nyt(session, db=None):
+    return await fetch_rss_feed(session, db, "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml", "NYT", translate=True)
+
+async def fetch_reuters(session, db=None):
+    # Reuters public RSS is deprecated. Using Google News RSS proxy for Reuters.
+    url = "https://news.google.com/rss/search?q=site:reuters.com+when:1d&hl=en-US&gl=US&ceid=US:en"
+    # Google News RSS items link to google redirects, but fetch_rss_feed stores the link.
+    # process_article_link follows redirects usually? aiohttp follows redirects by default.
+    return await fetch_rss_feed(session, db, url, "Reuters", translate=True)
+
 async def run_all_scrapers(db_client=None, sources=None):
     """
     Run scrapers based on sources list.
     sources: list of strings
     """
     tasks = []
+    # If sources is None or empty, we default to ALL sources
+    # But for "Live Update" via API, the frontend might send specific sources.
+    # We need to ensure new sources are included in the default set if sources is None.
+
+    known_sources = {
+        'anduril': fetch_anduril_tw,
+        'blocktempo': fetch_blocktempo,
+        'cnyes': fetch_cnyes_stock,
+        'cnbc': fetch_cnbc,
+        'seekingalpha': fetch_seeking_alpha,
+        'marketwatch': fetch_marketwatch,
+        'bbc': fetch_bbc,
+        'cnn': fetch_cnn,
+        'techcrunch': fetch_techcrunch,
+        'forbes': fetch_forbes,
+        'businessinsider': fetch_business_insider,
+        'axios': fetch_axios,
+        'nyt': fetch_nyt,
+        'reuters': fetch_reuters
+    }
+
     if not sources:
-        sources = ['anduril', 'blocktempo', 'cnyes', 'cnbc', 'seekingalpha', 'marketwatch']
+        sources = list(known_sources.keys())
 
     async with aiohttp.ClientSession() as session:
-        if 'anduril' in sources: tasks.append(fetch_anduril_tw(session, db_client))
-        if 'blocktempo' in sources: tasks.append(fetch_blocktempo(session, db_client))
-        if 'cnyes' in sources: tasks.append(fetch_cnyes_stock(session, db_client))
-
-        # New sources
-        if 'cnbc' in sources: tasks.append(fetch_cnbc(session, db_client))
-        if 'seekingalpha' in sources: tasks.append(fetch_seeking_alpha(session, db_client))
-        if 'marketwatch' in sources: tasks.append(fetch_marketwatch(session, db_client))
+        for s in sources:
+            if s in known_sources:
+                tasks.append(known_sources[s](session, db_client))
 
         # Use return_exceptions=True so one failure doesn't crash the whole batch
         results = await asyncio.gather(*tasks, return_exceptions=True)

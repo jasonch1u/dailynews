@@ -25,7 +25,8 @@ class SupabaseClient:
     async def get_summary_by_date(self, date_str: str) -> str:
         if not self.is_configured: return None
         url = f"{self.base_url}/rest/v1/news_summaries"
-        params = {"date": f"eq.{date_str}", "select": "content"}
+        # Get the LATEST version (order by version desc limit 1)
+        params = {"date": f"eq.{date_str}", "select": "content", "order": "version.desc", "limit": "1"}
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=self.headers, params=params) as response:
@@ -35,12 +36,35 @@ class SupabaseClient:
         except Exception: pass
         return None
 
-    async def save_summary(self, date_str: str, content: str):
+    async def save_summary(self, date_str: str, content: str, prompt: str = None):
         if not self.is_configured: return
         url = f"{self.base_url}/rest/v1/news_summaries"
-        payload = {"date": date_str, "content": content}
+
+        # 1. Get current max version for this date
+        max_version = 0
+        try:
+            async with aiohttp.ClientSession() as session:
+                params = {"date": f"eq.{date_str}", "select": "version", "order": "version.desc", "limit": "1"}
+                async with session.get(url, headers=self.headers, params=params) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if data:
+                            max_version = data[0].get('version', 0) or 0
+        except Exception as e:
+            print(f"Error getting max version: {e}")
+
+        # 2. Insert new version
+        new_version = max_version + 1
+        payload = {
+            "date": date_str,
+            "content": content,
+            "version": new_version,
+            "prompt": prompt
+        }
+
+        # We use POST to insert a new row (since PK is date+version)
+        # We do NOT use merge-duplicates resolution because we want a new row
         headers = self.headers.copy()
-        headers["Prefer"] = "resolution=merge-duplicates"
         try:
             async with aiohttp.ClientSession() as session:
                 await session.post(url, headers=headers, json=payload)
@@ -64,7 +88,7 @@ class SupabaseClient:
     async def get_article(self, url_key: str):
         if not self.is_configured: return None
         api_url = f"{self.base_url}/rest/v1/articles"
-        params = {"url": f"eq.{url_key}", "select": "title,content,source"}
+        params = {"url": f"eq.{url_key}", "select": "title,content,source,published_date"}
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url, headers=self.headers, params=params) as resp:
