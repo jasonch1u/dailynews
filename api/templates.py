@@ -187,6 +187,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
             line-height: 1.7;
             min-height: 300px;
+            overflow-x: hidden; /* Prevent horizontal scroll causing layout break */
         }
         #content h2 { border-bottom: 2px solid #f1f3f5; padding-bottom: 10px; margin-top: 30px; }
         #content h3 { color: #495057; margin-top: 25px; margin-bottom: 15px; }
@@ -206,7 +207,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             vertical-align: middle;
             font-weight: normal;
             background: #6c757d; /* Default */
+            display: inline-block; /* Ensure proper spacing */
+            margin-bottom: 2px;
+            text-decoration: none !important; /* Remove underline from link badges */
         }
+
+        /* Specific Source Colors */
         #content .source-cnyes { background: #dc3545; }
         #content .source-blocktempo { background: #fd7e14; }
         #content .source-anduril { background: #0d6efd; }
@@ -223,6 +229,21 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         #content .source-nyt { background: #000000; }
         #content .source-reuters { background: #ff8000; }
 
+        /* Compact Related Reports Container */
+        .related-reports-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+            align-items: center;
+        }
+        .related-label {
+            font-weight: 600;
+            color: #666;
+            font-size: 0.9em;
+            margin-right: 5px;
+        }
+
         /* Article List Sidebar */
         #articleList {
             background: var(--card-bg);
@@ -233,6 +254,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             top: calc(var(--header-height) + 20px);
             max-height: calc(100vh - 100px);
             overflow-y: auto;
+            /* Ensure sidebar doesn't get squashed */
+            min-width: 250px;
         }
         #articleList h3 { margin-top: 0; font-size: 1.1em; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; color: #495057; }
         #articleListContent { text-align: left; }
@@ -564,6 +587,41 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 if(s.includes('businessinsider')) return 'source-businessinsider';
                 return 'source-default';
             };
+
+            // --- Helper: Collapse Related Reports List into Chips ---
+            // Pattern to find: **相關報導**:\n- [Source] [Title](Link)\n...
+            // We want to replace this vertical list with: <div class="related-reports-container"><span class="related-label">相關報導:</span> <a href="Link" class="article-source ...">Source</a> ...</div>
+
+            // 1. Find the Related Reports block
+            // This regex looks for **相關報導** (or with other punctuation) followed by list items
+            // It captures the whole block to replace it.
+            // Note: This is tricky with regex. We'll do a custom pass for this specific section structure.
+
+            const relatedSectionRegex = /(\*\*相關報導\*\*[:：]?\s*\n(?:-\s*\[.*?\]\s*\[.*?\]\(.*?\)\s*\n?)+)/g;
+
+            markdown = markdown.replace(relatedSectionRegex, (match) => {
+                // Parse individual lines
+                const lines = match.split('\n').filter(l => l.trim().startsWith('-'));
+                let html = '<div class="related-reports-container"><span class="related-label">相關報導:</span>';
+
+                lines.forEach(line => {
+                    // Match: - [Source] [Title](Link)
+                    const itemRegex = /-\s*\[(.*?)\]\s*\[(.*?)\]\((.*?)\)/;
+                    const itemMatch = line.match(itemRegex);
+                    if (itemMatch) {
+                        const src = itemMatch[1];
+                        const title = itemMatch[2]; // Unused in badge-only mode, or could be tooltip
+                        const link = itemMatch[3];
+                        const cls = getSourceClass(src);
+                        html += `<a href="${link}" target="_blank" class="article-source ${cls}" title="${title}">${src}</a>`;
+                    }
+                });
+
+                html += '</div>';
+                return html;
+            });
+
+            // --- Standard Replacements for other sections (Headers, etc.) ---
 
             // Use simple regex to find [Any Text] inside headers ### ...
             // We assume AI follows "### [Source] Title"

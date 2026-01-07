@@ -29,7 +29,7 @@ async def call_gemini(prompt: str, api_key: str):
 async def generate_daily_summary(articles_text: str, api_key: str):
     """
     Generates the daily news summary using Gemini with Advanced Architecture.
-    (Sentiment Dashboard -> Top 10 Topics -> Other News List -> Maker-Checker for Links)
+    (Sentiment Dashboard -> Key Takeaways -> Top 10 Topics -> Other News List -> Maker-Checker for Links)
     """
     prompt_text = f"""
     你是一個專業的華爾街財經新聞主編。請仔細閱讀以下抓取到的全球新聞，並製作一份「每日市場深度報告」。
@@ -59,6 +59,11 @@ async def generate_daily_summary(articles_text: str, api_key: str):
 
     ---
 
+    **關鍵結論 (Key Takeaways)**：
+    *   (列出 3 點最重要的市場洞察，每點約 20-30 字)
+
+    ---
+
     ## 🔥 今日十大焦點 (Top 10 Main Topics)
 
     ### 1. [分類] 事件標題
@@ -83,7 +88,7 @@ async def generate_daily_summary(articles_text: str, api_key: str):
     ---
 
     **自我檢查清單 (Maker Checker)**：
-    1.  是否已生成「市場儀表板」？
+    1.  是否已生成「市場儀表板」和「關鍵結論」？
     2.  是否每個焦點事件下方都有「相關報導」且連結有效？
     3.  連結是否與文章標題正確對應？
 
