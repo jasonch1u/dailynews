@@ -471,10 +471,18 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
             // Use simple regex to find [Any Text] inside headers ### ...
             // We assume AI follows "### [Source] Title"
-            return markdown.replace(/###\s*\[(.*?)\]/g, (match, sourceName) => {
+            markdown = markdown.replace(/###\s*\[(.*?)\]/g, (match, sourceName) => {
                 const cls = getSourceClass(sourceName);
                 return `### <span class="article-source ${cls}">${sourceName}</span>`;
             });
+
+            // Also replace bold sources in lists: - **[Source]** Title
+            markdown = markdown.replace(/-\s*\*\*\[(.*?)\]\*\*/g, (match, sourceName) => {
+                const cls = getSourceClass(sourceName);
+                return `- <span class="article-source ${cls}">${sourceName}</span>`;
+            });
+
+            return markdown;
         }
 
         async function fetchSummary(forceLive = false) {
