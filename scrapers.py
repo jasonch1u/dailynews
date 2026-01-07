@@ -129,7 +129,7 @@ async def fetch_rss_feed(session, db, url, source_name, translate=False, allow_e
                 soup = BeautifulSoup(xml, 'html.parser')
 
             items = soup.find_all('item')
-            for item in items[:5]: # Top 5
+            for item in items[:10]: # Top 10
                 title = item.title.text.strip() if item.title else "No Title"
                 link = item.link.text.strip() if item.link else ""
                 if not link and item.guid: link = item.guid.text.strip()
@@ -200,7 +200,7 @@ async def fetch_anduril_tw(session, db=None):
         soup = BeautifulSoup(html, 'html.parser')
         cards = soup.find_all('article', class_='gh-card')
         for card in cards:
-            if len(tasks) >= 5: break
+            if len(tasks) >= 10: break
             time_tag = card.find('time')
             if time_tag and time_tag.get('datetime') != get_today_str(): continue
             link_tag = card.find('a', class_='gh-card-link')
@@ -221,7 +221,7 @@ async def fetch_blocktempo(session, db=None):
     if html:
         soup = BeautifulSoup(html, 'html.parser')
         for h3 in soup.find_all('h3'):
-            if len(tasks) >= 5: break
+            if len(tasks) >= 10: break
             a = h3.find('a')
             if a and a.get('href'):
                 title = a.get('title') or a.text.strip()
@@ -245,7 +245,7 @@ async def fetch_cnyes_stock(session, db=None):
                 soup = BeautifulSoup(xml, 'html.parser')
 
             items = soup.find_all('item')
-            for item in items[:5]: # Top 5 latest
+            for item in items[:10]: # Top 10 latest
                 title = item.title.text.strip() if item.title else "No Title"
                 link = item.link.text.strip() if item.link else ""
                 if not link and item.guid: link = item.guid.text.strip()
