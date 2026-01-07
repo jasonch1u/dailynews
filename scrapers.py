@@ -278,24 +278,69 @@ async def fetch_seeking_alpha(session, db=None):
 async def fetch_marketwatch(session, db=None):
     return await fetch_rss_feed(session, db, "https://feeds.content.dowjones.io/public/rss/mw_topstories", "MarketWatch", translate=True)
 
+# New fetch functions for additional sources
+async def fetch_bbc(session, db=None):
+    return await fetch_rss_feed(session, db, "http://feeds.bbci.co.uk/news/rss.xml", "BBC")
+
+async def fetch_cnn(session, db=None):
+    return await fetch_rss_feed(session, db, "http://rss.cnn.com/rss/edition.rss", "CNN")
+
+async def fetch_techcrunch(session, db=None):
+    return await fetch_rss_feed(session, db, "https://techcrunch.com/feed/", "TechCrunch")
+
+async def fetch_forbes(session, db=None):
+    return await fetch_rss_feed(session, db, "https://www.forbes.com/most-popular/feed/", "Forbes")
+
+async def fetch_business_insider(session, db=None):
+    return await fetch_rss_feed(session, db, "https://feeds.businessinsider.com/custom/all", "BusinessInsider")
+
+async def fetch_axios(session, db=None):
+    return await fetch_rss_feed(session, db, "https://api.axios.com/feed/", "Axios")
+
+async def fetch_nyt(session, db=None):
+    return await fetch_rss_feed(session, db, "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml", "NYT")
+
+async def fetch_reuters(session, db=None):
+    # Reuters public RSS is deprecated. Using Google News RSS proxy for Reuters.
+    url = "https://news.google.com/rss/search?q=site:reuters.com+when:1d&hl=en-US&gl=US&ceid=US:en"
+    # Google News RSS items link to google redirects, but fetch_rss_feed stores the link.
+    # process_article_link follows redirects usually? aiohttp follows redirects by default.
+    return await fetch_rss_feed(session, db, url, "Reuters")
+
 async def run_all_scrapers(db_client=None, sources=None):
     """
     Run scrapers based on sources list.
     sources: list of strings
     """
     tasks = []
+    # If sources is None or empty, we default to ALL sources
+    # But for "Live Update" via API, the frontend might send specific sources.
+    # We need to ensure new sources are included in the default set if sources is None.
+
+    known_sources = {
+        'anduril': fetch_anduril_tw,
+        'blocktempo': fetch_blocktempo,
+        'cnyes': fetch_cnyes_stock,
+        'cnbc': fetch_cnbc,
+        'seekingalpha': fetch_seeking_alpha,
+        'marketwatch': fetch_marketwatch,
+        'bbc': fetch_bbc,
+        'cnn': fetch_cnn,
+        'techcrunch': fetch_techcrunch,
+        'forbes': fetch_forbes,
+        'businessinsider': fetch_business_insider,
+        'axios': fetch_axios,
+        'nyt': fetch_nyt,
+        'reuters': fetch_reuters
+    }
+
     if not sources:
-        sources = ['anduril', 'blocktempo', 'cnyes', 'cnbc', 'seekingalpha', 'marketwatch']
+        sources = list(known_sources.keys())
 
     async with aiohttp.ClientSession() as session:
-        if 'anduril' in sources: tasks.append(fetch_anduril_tw(session, db_client))
-        if 'blocktempo' in sources: tasks.append(fetch_blocktempo(session, db_client))
-        if 'cnyes' in sources: tasks.append(fetch_cnyes_stock(session, db_client))
-
-        # New sources
-        if 'cnbc' in sources: tasks.append(fetch_cnbc(session, db_client))
-        if 'seekingalpha' in sources: tasks.append(fetch_seeking_alpha(session, db_client))
-        if 'marketwatch' in sources: tasks.append(fetch_marketwatch(session, db_client))
+        for s in sources:
+            if s in known_sources:
+                tasks.append(known_sources[s](session, db_client))
 
         # Use return_exceptions=True so one failure doesn't crash the whole batch
         results = await asyncio.gather(*tasks, return_exceptions=True)
