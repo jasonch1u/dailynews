@@ -95,7 +95,28 @@ async def process_article_link(session, db, title, link, source, content_selecto
             container = soup.select_one(content_selector) if content_selector else soup.find('main')
             if not container: container = soup
 
-            text = "\n".join([p.text.strip() for p in container.find_all('p') if len(p.text.strip()) > 10])
+            # Truncate content at common "Extended Reading" markers (especially for Cnyes)
+            # This is a heuristic to stop processing once we hit a "Related/Extended" section if selector failed to exclude it.
+            # But first, we collect text.
+
+            # Refined strategy: Filter elements while iterating.
+            # However, for Cnyes we specifically targeted #article-container which supposedly excludes related news.
+            # But let's add a keyword filter for safety.
+
+            text_parts = []
+            stop_keywords = ["延伸閱讀", "相關新聞", "更多鉅亨報導", "推薦閱讀"]
+
+            for p in container.find_all('p'):
+                t = p.text.strip()
+                if len(t) < 5: continue
+
+                # Check for stop keywords in a standalone paragraph or strong header style
+                if any(k == t for k in stop_keywords) or (len(t) < 20 and any(k in t for k in stop_keywords)):
+                    break
+
+                text_parts.append(t)
+
+            text = "\n".join(text_parts)
             content = text[:2000] + "..." if len(text) > 2000 else text
 
             if content:
@@ -261,7 +282,8 @@ async def fetch_cnyes_stock(session, db=None):
                     # We still fetch the full article content using process_article_link
                     # This ensures we get the full text, not just the RSS summary
                     # And process_article_link handles the <time> tag check
-                    tasks.append(process_article_link(session, db, title, link, "Cnyes", "main", True))
+                    # Updated selector to #article-container per user request to avoid unrelated content
+                    tasks.append(process_article_link(session, db, title, link, "Cnyes", "#article-container", True))
 
     except Exception as e:
         print(f"Cnyes RSS Error: {e}")

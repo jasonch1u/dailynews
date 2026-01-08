@@ -264,9 +264,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             padding: 10px 0;
             border-bottom: 1px solid #f1f3f5;
             font-size: 0.9rem;
-            display: flex;
-            align-items: baseline;
-            gap: 8px;
+            display: block; /* Changed from flex to block per user request */
         }
         .article-item:last-child { border-bottom: none; }
         .article-source {
@@ -276,6 +274,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             border-radius: 4px;
             white-space: nowrap;
             flex-shrink: 0;
+            margin-bottom: 4px; /* Add margin for block layout */
+            display: inline-block;
         }
         .article-link {
             color: #333;
@@ -491,16 +491,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         async function handleDateChange() {
             const date = document.getElementById('historySelect').value;
 
-            if (date) {
-                // Historical View
-                document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = true);
-                // Keep button visible, but user knows clicking it resets to today
-                document.getElementById('generateBtn').style.display = 'inline-block';
-            } else {
-                // Today View
-                document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = false);
-                document.getElementById('generateBtn').style.display = 'inline-block';
-            }
+            // Always allow source selection (requested by user)
+            document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = false);
+
+            // Keep button visible
+            document.getElementById('generateBtn').style.display = 'inline-block';
 
             await loadArticlesList(date);
 
