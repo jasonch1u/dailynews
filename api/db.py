@@ -149,3 +149,40 @@ class SupabaseClient:
             async with aiohttp.ClientSession() as session:
                 await session.post(url, headers=self.headers, json=payload)
         except Exception: pass
+
+    # --- Market Liquidity ---
+
+    async def save_market_liquidity(self, data_list: list):
+        """
+        Upserts market liquidity data points.
+        data_list: List of dicts with keys: date, walcl, tga, rrp, net_liquidity
+        """
+        if not self.is_configured or not data_list: return
+        url = f"{self.base_url}/rest/v1/market_liquidity"
+
+        headers = self.headers.copy()
+        headers["Prefer"] = "resolution=merge-duplicates"
+
+        # Supabase allows bulk upsert
+        try:
+            async with aiohttp.ClientSession() as session:
+                await session.post(url, headers=headers, json=data_list)
+        except Exception as e:
+            print(f"Error saving market liquidity: {e}")
+
+    async def get_market_liquidity(self):
+        """Fetch all market liquidity data ordered by date."""
+        if not self.is_configured: return []
+        url = f"{self.base_url}/rest/v1/market_liquidity"
+        params = {
+            "select": "date,net_liquidity,walcl,tga,rrp",
+            "order": "date.asc"
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=self.headers, params=params) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+        except Exception as e:
+            print(f"Error fetching market liquidity: {e}")
+        return []

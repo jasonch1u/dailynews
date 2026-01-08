@@ -6,8 +6,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>每日新聞 AI 摘要</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📰</text></svg>">
-    <!-- Pin marked.js version to 4.3.0 to ensure renderer.link(href, title, text) signature works as expected -->
+    <!-- Pin marked.js version to 4.3.0 -->
     <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+    <!-- Lightweight Charts for Fed Liquidity -->
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root {
             --primary-color: #0d6efd;
@@ -54,6 +56,24 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             margin: 0;
             color: #2c3e50;
             white-space: nowrap;
+        }
+
+        /* Liquidity Badge */
+        #liquidity-badge {
+            background: #e7f5ff;
+            color: #0d6efd;
+            border: 1px solid #0d6efd;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: 15px;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        #liquidity-badge:hover {
+            background: #d0e8ff;
         }
 
         .header-controls {
@@ -326,6 +346,41 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         .toast.success { background-color: #198754; }
         .toast.error { background-color: #dc3545; }
         .toast.info { background-color: #0d6efd; }
+
+        /* Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 900px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            position: relative;
+        }
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #666;
+        }
+        #chart-container {
+            width: 100%;
+            height: 400px;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -337,6 +392,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             <select id="historySelect" onchange="handleDateChange()" style="margin-left: 10px;">
                 <option value="">-- 載入中 --</option>
             </select>
+            <!-- Liquidity Badge -->
+            <div id="liquidity-badge" onclick="openLiquidityModal()" title="點擊查看 Fed 流動性圖表">
+                Net Liquidity: <span id="liquidity-val">...</span>
+            </div>
         </div>
 
         <div class="header-controls">
@@ -376,6 +435,22 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     </div>
 
     <div id="toast-container"></div>
+
+    <!-- Liquidity Modal -->
+    <div id="liquidityModal" class="modal-overlay" onclick="if(event.target === this) closeLiquidityModal()">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeLiquidityModal()">&times;</button>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2 style="margin:0;">🏦 Fed Net Liquidity 趨勢圖</h2>
+                <button class="primary-btn" onclick="fetchLiquidity(true)" style="padding: 4px 10px; font-size: 0.8rem;">🔄 更新數據</button>
+            </div>
+            <p style="color:#666; font-size:0.9rem; margin: 10px 0;">
+                Net Liquidity = Fed Assets - TGA - RRP (每週三更新)<br>
+                單位: Trillion USD (兆美元)
+            </p>
+            <div id="chart-container"></div>
+        </div>
+    </div>
 
     <div class="main-container">
         <!-- AI Summary Area -->
@@ -450,7 +525,104 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         window.addEventListener('DOMContentLoaded', async () => {
             await loadHistoryDates();
+            fetchLiquidity(false); // Fetch on load
         });
+
+        // --- Liquidity Logic ---
+        let chart;
+        let lineSeries;
+
+        function openLiquidityModal() {
+            document.getElementById('liquidityModal').style.display = 'flex';
+            if (!chart) initChart(); // Init if not exists
+        }
+
+        function closeLiquidityModal() {
+            document.getElementById('liquidityModal').style.display = 'none';
+        }
+
+        async function fetchLiquidity(refresh = false) {
+            const valSpan = document.getElementById('liquidity-val');
+            try {
+                if (refresh) valSpan.innerText = "更新中...";
+                const res = await fetch(`/api/liquidity${refresh ? '?refresh=true' : ''}`);
+                if (res.ok) {
+                    const json = await res.json();
+                    const data = json.data;
+
+                    if (data && data.length > 0) {
+                        // Update Badge (Latest value)
+                        const latest = data[data.length - 1];
+                        const valTrillion = (latest.net_liquidity / 1000000).toFixed(2);
+                        valSpan.innerText = `$${valTrillion}T`;
+
+                        // Prepare Chart Data
+                        // Lightweight Charts expects { time: 'yyyy-mm-dd', value: 123 }
+                        const chartData = data.map(d => ({
+                            time: d.date,
+                            value: d.net_liquidity / 1000000 // Convert Millions to Trillions
+                        }));
+
+                        if (chart && lineSeries) {
+                            lineSeries.setData(chartData);
+                            chart.timeScale().fitContent();
+                        } else {
+                            // Store for later init
+                            window.liquidityData = chartData;
+                        }
+                    } else {
+                         valSpan.innerText = "N/A";
+                    }
+                }
+            } catch (e) {
+                console.error("Liquidity fetch error", e);
+                valSpan.innerText = "Error";
+            }
+        }
+
+        function initChart() {
+             if (!window.liquidityData) return;
+
+             const container = document.getElementById('chart-container');
+             container.innerHTML = ''; // Clear
+
+             chart = LightweightCharts.createChart(container, {
+                width: container.clientWidth,
+                height: 400,
+                layout: {
+                    background: { color: '#ffffff' },
+                    textColor: '#333',
+                },
+                grid: {
+                    vertLines: { color: '#f0f3fa' },
+                    horzLines: { color: '#f0f3fa' },
+                },
+                rightPriceScale: {
+                    scaleMargins: {
+                        top: 0.1,
+                        bottom: 0.1,
+                    },
+                },
+                timeScale: {
+                    borderColor: '#D1D4DC',
+                },
+            });
+
+            lineSeries = chart.addLineSeries({
+                color: '#0d6efd',
+                lineWidth: 2,
+            });
+
+            lineSeries.setData(window.liquidityData);
+            chart.timeScale().fitContent();
+
+            // Handle resize
+            new ResizeObserver(entries => {
+                if (entries.length === 0 || entries[0].target !== container) { return; }
+                const newRect = entries[0].contentRect;
+                chart.applyOptions({ width: newRect.width, height: newRect.height });
+            }).observe(container);
+        }
 
         async function loadHistoryDates() {
             const select = document.getElementById('historySelect');
