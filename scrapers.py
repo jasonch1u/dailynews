@@ -258,7 +258,7 @@ async def fetch_cnyes_stock(session, db=None):
                     # We still fetch the full article content using process_article_link
                     # This ensures we get the full text, not just the RSS summary
                     # And process_article_link handles the <time> tag check
-                    tasks.append(process_article_link(session, db, title, link, "Cnyes", "main", True))
+                    tasks.append(process_article_link(session, db, title, link, "Cnyes", "#article-container", True))
 
     except Exception as e:
         print(f"Cnyes RSS Error: {e}")
