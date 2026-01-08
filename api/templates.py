@@ -265,8 +265,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             border-bottom: 1px solid #f1f3f5;
             font-size: 0.9rem;
             display: flex;
-            align-items: baseline;
-            gap: 8px;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 5px;
         }
         .article-item:last-child { border-bottom: none; }
         .article-source {
@@ -491,16 +492,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         async function handleDateChange() {
             const date = document.getElementById('historySelect').value;
 
-            if (date) {
-                // Historical View
-                document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = true);
-                // Keep button visible, but user knows clicking it resets to today
-                document.getElementById('generateBtn').style.display = 'inline-block';
-            } else {
-                // Today View
-                document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = false);
-                document.getElementById('generateBtn').style.display = 'inline-block';
-            }
+            // Always ensure checkboxes are enabled
+            document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = false);
+            document.getElementById('generateBtn').style.display = 'inline-block';
 
             await loadArticlesList(date);
 
