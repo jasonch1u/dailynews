@@ -120,11 +120,14 @@ async def fetch_rss_feed(session, db, url, source_name, translate=False, allow_e
     try:
         xml = await fetch_url_with_retry(session, url)
         if xml:
+            # Use 'xml' parser to avoid XMLParsedAsHTMLWarning and ensure correct parsing of RSS/Atom
             try:
                 soup = BeautifulSoup(xml, 'xml')
             except Exception:
+                # Fallback if lxml is missing or parsing fails
                 soup = BeautifulSoup(xml, 'html.parser')
 
+            # Double check if 'item' was found (sometimes 'xml' parser is strict on malformed RSS)
             if not soup.find('item'):
                 soup = BeautifulSoup(xml, 'html.parser')
 
