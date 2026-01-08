@@ -582,61 +582,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 return 'source-default';
             };
 
-            // --- Helper: Collapse Related Reports List into Chips ---
-            // Pattern to find: **相關報導**:\n- [Source] [Title](Link)\n...
-            // We want to replace this vertical list with: <div class="related-reports-container"><span class="related-label">相關報導:</span> <a href="Link" class="article-source ...">Source</a> ...</div>
-
-            // 1. Find the Related Reports block
-            // This regex looks for **相關報導** (or with other punctuation) followed by list items
-            // It captures the whole block to replace it.
-            // Note: This is tricky with regex. We'll do a custom pass for this specific section structure.
-
-            // --- Helper: Collapse Related Reports List into Chips ---
-            // Pattern to find: **相關報導**:\n- [Source] [Title](Link)\n...
-            // OR Pattern with simple links: - [Source] <a href="...">Title</a> (if AI outputs raw HTML, which is unlikely but possible)
-            // AI Output: - [Source] [Title](Link)
-
-            // The user wants: [Source] (clickable link with Source text)
-            // Our previous regex constructed: <a href="Link" ...>Source</a>
-            // If the user says it shows "brackets", maybe the AI is outputting literal brackets or the regex failed.
-            // Let's make the Regex more robust to spaces and newlines.
-
-            // Regex to match the entire "Related Reports" block until the next double newline or Header
-            const relatedSectionRegex = /(\*\*相關報導\*\*[:：]?\s*\n(?:-\s*\[.*?\]\s*\[.*?\]\(.*?\)\s*\n?)+)/g;
-
-            markdown = markdown.replace(relatedSectionRegex, (match) => {
-                const lines = match.split('\n').filter(l => l.trim().startsWith('-'));
-                let html = '<div class="related-reports-container"><span class="related-label">相關報導:</span>';
-
-                lines.forEach(line => {
-                    // Robust match for: - [Source] [Title](Link)
-                    // We use non-greedy matching `.*?`
-                    const itemRegex = /-\s*\[(.*?)\]\s*\[(.*?)\]\((.*?)\)/;
-                    const itemMatch = line.match(itemRegex);
-                    if (itemMatch) {
-                        const src = itemMatch[1];
-                        const title = itemMatch[2];
-                        const link = itemMatch[3];
-                        const cls = getSourceClass(src);
-                        // User wants: "Click news title to jump" -> "改用新聞標題直接下超連結"
-                        // Wait, user said: "這個連結的部分會讓版面看起來很長... 有辦法改用新聞標題直接下超連結嗎?"
-                        // User's example of bad output: `[Cnyes] Title](Link)` showing brackets.
-                        // User's desired output: Just the Title as a link?
-                        // "改用新聞標題直接下超連結" means: <a href="Link">Title</a>
-
-                        // BUT, earlier I implemented "Chips" (Source Name as Link).
-                        // Let's respect the LAST request: "改用新聞標題直接下超連結"
-                        // This means we should render: [Source Badge] <a href="Link">Title</a>
-
-                        html += `<span class="article-source ${cls}" style="margin-right:4px">${src}</span><a href="${link}" target="_blank" style="margin-right:12px; font-size:0.9em;">${title}</a>`;
-                    }
-                });
-
-                html += '</div>';
-                return html;
-            });
-
-            // --- Standard Replacements for other sections (Headers, etc.) ---
+            // --- Removed "Related Reports" custom chip layout to fix ### 2. rendering issue and restore standard list format ---
+            // The standard markdown parser will handle "- [Source] [Title](Link)" correctly as a list item with a link.
+            // This also solves the user's request to keep [Source] plain text and have clickable titles.
+            // ---
 
             // Use simple regex to find [Any Text] inside headers ### ...
             // We assume AI follows "### [Source] Title"
