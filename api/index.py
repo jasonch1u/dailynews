@@ -8,10 +8,10 @@ import json
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from dotenv import load_dotenv
-from api.llm_utils import translate_text, generate_daily_summary
+from api._llm_utils import translate_text, generate_daily_summary
 from scrapers import run_all_scrapers
-from api.templates import HTML_CONTENT
-from api.db import SupabaseClient
+from api._templates import HTML_CONTENT
+from api._db import SupabaseClient
 
 # Load environment variables
 load_dotenv()

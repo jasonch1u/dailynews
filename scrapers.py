@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 import time
 import os
 from datetime import datetime, timezone, timedelta
-from api.llm_utils import translate_text
+from api._llm_utils import translate_text
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
