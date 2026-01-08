@@ -8,8 +8,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📰</text></svg>">
     <!-- Pin marked.js version to 4.3.0 -->
     <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
-    <!-- Lightweight Charts for Fed Liquidity -->
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <!-- Lightweight Charts for Fed Liquidity (Pinned to 4.1.1) -->
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root {
             --primary-color: #0d6efd;
@@ -586,35 +586,43 @@ HTML_CONTENT = r"""<!DOCTYPE html>
              const container = document.getElementById('chart-container');
              container.innerHTML = ''; // Clear
 
-             chart = LightweightCharts.createChart(container, {
-                width: container.clientWidth,
-                height: 400,
-                layout: {
-                    background: { color: '#ffffff' },
-                    textColor: '#333',
-                },
-                grid: {
-                    vertLines: { color: '#f0f3fa' },
-                    horzLines: { color: '#f0f3fa' },
-                },
-                rightPriceScale: {
-                    scaleMargins: {
-                        top: 0.1,
-                        bottom: 0.1,
+             try {
+                 chart = LightweightCharts.createChart(container, {
+                    width: container.clientWidth,
+                    height: 400,
+                    layout: {
+                        background: { color: '#ffffff' },
+                        textColor: '#333',
                     },
-                },
-                timeScale: {
-                    borderColor: '#D1D4DC',
-                },
-            });
+                    grid: {
+                        vertLines: { color: '#f0f3fa' },
+                        horzLines: { color: '#f0f3fa' },
+                    },
+                    rightPriceScale: {
+                        scaleMargins: {
+                            top: 0.1,
+                            bottom: 0.1,
+                        },
+                    },
+                    timeScale: {
+                        borderColor: '#D1D4DC',
+                    },
+                });
 
-            lineSeries = chart.addLineSeries({
-                color: '#0d6efd',
-                lineWidth: 2,
-            });
+                // Debug log
+                console.log("Chart initialized:", chart);
 
-            lineSeries.setData(window.liquidityData);
-            chart.timeScale().fitContent();
+                lineSeries = chart.addLineSeries({
+                    color: '#0d6efd',
+                    lineWidth: 2,
+                });
+
+                lineSeries.setData(window.liquidityData);
+                chart.timeScale().fitContent();
+             } catch (e) {
+                 console.error("Chart init error:", e);
+                 container.innerHTML = '<p style="color:red; text-align:center; margin-top:50px;">圖表載入失敗，請重新整理頁面。</p>';
+             }
 
             // Handle resize
             new ResizeObserver(entries => {
