@@ -562,6 +562,15 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
             if (!markdown) return "";
 
+            // --- Remove "Maker Checker" Self-Check List ---
+            // Finds the self-check section and truncates everything after it.
+            const makerCheckerRegex = /\*\*自我檢查清單/;
+            const splitIndex = markdown.search(makerCheckerRegex);
+            if (splitIndex !== -1) {
+                markdown = markdown.substring(0, splitIndex);
+            }
+            // ----------------------------------------------
+
             // Mapping for classes
             const getSourceClass = (src) => {
                 const s = src.toLowerCase();
