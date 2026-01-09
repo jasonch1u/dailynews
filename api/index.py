@@ -133,6 +133,7 @@ async def summarize_news_endpoint(
         try:
             # Step 1: Scrapers
             yield f"data: {json.dumps({'status': '正在連線至各國新聞來源...', 'step': 1})}\n\n"
+            await asyncio.sleep(0.1)
 
             # Run Scrapers (30s timeout)
             try:
@@ -143,6 +144,7 @@ async def summarize_news_endpoint(
 
             # Step 2: DB Fetch
             yield f"data: {json.dumps({'status': '正在從資料庫彙整今日文章...', 'step': 2})}\n\n"
+            await asyncio.sleep(0.1)
 
             # Helper to fetch content
             async def fetch_todays_full_articles():
@@ -173,6 +175,7 @@ async def summarize_news_endpoint(
 
             # Step 3: AI Generation
             yield f"data: {json.dumps({'status': 'AI 正在分析市場趨勢並撰寫報告 (請稍候)...', 'step': 3})}\n\n"
+            await asyncio.sleep(0.1)
 
             # Filter out MarketWatch from database articles (double protection)
             filtered_articles = [a for a in todays_articles if 'marketwatch' not in a['source'].lower()]
@@ -196,7 +199,7 @@ async def summarize_news_endpoint(
             await db.log_error("api:error", str(e))
             yield f"data: {json.dumps({'error': '系統發生錯誤', 'details': str(e)})}\n\n"
 
-    return StreamingResponse(summary_generator(), media_type="text/event-stream")
+    return StreamingResponse(summary_generator(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 @app.get("/")
 @app.get("")

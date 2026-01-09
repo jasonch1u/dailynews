@@ -779,11 +779,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 return `### <span class="article-source ${cls}">${sourceName}</span>`;
             });
 
-            // Also replace bold sources in lists: - **[Source]** Title
-            markdown = markdown.replace(/-\s*\*\*\[(.*?)\]\*\*/g, (match, sourceName) => {
-                const cls = getSourceClass(sourceName);
-                return `- <span class="article-source ${cls}">${sourceName}</span>`;
-            });
+            // [DISABLED] Also replace bold sources in lists: - **[Source]** Title
+            // User requested Plain Text for sources in lists (Related Reports & Other News).
+            // markdown = markdown.replace(/-\s*\*\*\[(.*?)\]\*\*/g, (match, sourceName) => {
+            //    const cls = getSourceClass(sourceName);
+            //    return `- <span class="article-source ${cls}">${sourceName}</span>`;
+            // });
 
             return markdown;
         }
