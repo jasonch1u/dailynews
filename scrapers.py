@@ -275,9 +275,6 @@ async def fetch_seeking_alpha(session, db=None):
     # We enable allow_empty_content=True to use the Title as the content, so the AI at least sees the headlines.
     return await fetch_rss_feed(session, db, "https://seekingalpha.com/market_currents.xml", "SeekingAlpha", translate=True, allow_empty_content=True)
 
-async def fetch_marketwatch(session, db=None):
-    return await fetch_rss_feed(session, db, "https://feeds.content.dowjones.io/public/rss/mw_topstories", "MarketWatch", translate=True)
-
 # New fetch functions for additional sources
 async def fetch_bbc(session, db=None):
     return await fetch_rss_feed(session, db, "http://feeds.bbci.co.uk/news/rss.xml", "BBC", translate=True)
@@ -323,7 +320,6 @@ async def run_all_scrapers(db_client=None, sources=None):
         'cnyes': fetch_cnyes_stock,
         'cnbc': fetch_cnbc,
         'seekingalpha': fetch_seeking_alpha,
-        'marketwatch': fetch_marketwatch,
         'bbc': fetch_bbc,
         'cnn': fetch_cnn,
         'techcrunch': fetch_techcrunch,

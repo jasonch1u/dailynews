@@ -238,7 +238,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         #content .source-anduril { background: #0d6efd; }
         #content .source-cnbc { background: #20c997; }
         #content .source-seekingalpha { background: #ffc107; color: #333 !important; }
-        #content .source-marketwatch { background: #6610f2; }
         #content .source-fox { background: #0d6efd; }
         #content .source-bbc { background: #b80000; }
         #content .source-cnn { background: #cc0000; }
@@ -409,7 +408,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     <hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
                     <label><input type="checkbox" value="cnbc" checked> CNBC (World)</label>
                     <label><input type="checkbox" value="seekingalpha" checked> Seeking Alpha</label>
-                    <label><input type="checkbox" value="marketwatch"> MarketWatch</label>
                     <hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
                     <label><input type="checkbox" value="bbc" checked> BBC</label>
                     <label><input type="checkbox" value="cnn" checked> CNN</label>
@@ -706,7 +704,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                             else if(s.includes('fox')) { sourceColor = '#0d6efd'; displaySource = 'FOX'; }
                             else if(s.includes('cnbc')) sourceColor = '#20c997';
                             else if(s.includes('seekingalpha')) sourceColor = '#ffc107';
-                            else if(s.includes('marketwatch')) sourceColor = '#6610f2';
                             else if(s.includes('bbc')) sourceColor = '#b80000';
                             else if(s.includes('cnn')) sourceColor = '#cc0000';
                             else if(s.includes('reuters')) sourceColor = '#ff8000';
@@ -759,7 +756,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 if(s.includes('anduril') || s.includes('fox')) return 'source-anduril'; // Re-use blue style
                 if(s.includes('cnbc')) return 'source-cnbc';
                 if(s.includes('seeking') || s.includes('alpha')) return 'source-seekingalpha';
-                if(s.includes('marketwatch')) return 'source-marketwatch';
                 if(s.includes('bbc')) return 'source-bbc';
                 if(s.includes('cnn')) return 'source-cnn';
                 if(s.includes('reuters')) return 'source-reuters';

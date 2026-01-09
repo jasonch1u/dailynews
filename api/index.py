@@ -95,7 +95,7 @@ async def summarize_news_endpoint(
 
     # Defaults
     all_sources = {
-        'anduril', 'blocktempo', 'cnyes', 'cnbc', 'seekingalpha', 'marketwatch',
+        'anduril', 'blocktempo', 'cnyes', 'cnbc', 'seekingalpha',
         'bbc', 'cnn', 'techcrunch', 'forbes', 'businessinsider', 'axios', 'nyt', 'reuters'
     }
     if sources:
@@ -174,7 +174,10 @@ async def summarize_news_endpoint(
             # Step 3: AI Generation
             yield f"data: {json.dumps({'status': 'AI 正在分析市場趨勢並撰寫報告 (請稍候)...', 'step': 3})}\n\n"
 
-            full_text = "\n".join([f"### {a['title']}\n{a['content']}\n出處: {a['source']}\nLink: {a['url']}" for a in todays_articles])
+            # Filter out MarketWatch from database articles (double protection)
+            filtered_articles = [a for a in todays_articles if 'marketwatch' not in a['source'].lower()]
+
+            full_text = "\n".join([f"### {a['title']}\n{a['content']}\n出處: {a['source']}\nLink: {a['url']}" for a in filtered_articles])
 
             summary, prompt_used = await generate_daily_summary(full_text, api_key)
 
