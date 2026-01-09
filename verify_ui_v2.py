@@ -1,38 +1,34 @@
-from playwright.sync_api import Page, expect, sync_playwright
+from playwright.sync_api import sync_playwright
 
-def verify_ui_updates(page: Page):
-    # 1. Arrange: Go to the app
-    print("Navigating to http://localhost:3000")
-    page.goto("http://localhost:3000")
-
-    # 2. Check title
-    expect(page).to_have_title("每日新聞 AI 摘要")
-    print("Title verified.")
-
-    # 3. Check for checkboxes
-    checkboxes = page.locator(".source-checkboxes input[type=checkbox]")
-    count = checkboxes.count()
-    print(f"Found {count} checkboxes.")
-    if count != 3:
-        raise Exception("Expected 3 checkboxes")
-
-    # 4. Check for CSS Card (by checking class existence or layout structure)
-    # Just visually checking via screenshot is enough for now.
-    controls = page.locator(".controls-container")
-    expect(controls).to_be_visible()
-
-    # 5. Screenshot
-    page.screenshot(path="/home/jules/verification/new_ui.png")
-    print("Screenshot taken.")
-
-if __name__ == "__main__":
+def verify_frontend():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
+        # 1. Load the HTML content from templates.py again
+        import api.templates
+        html_content = api.templates.HTML_CONTENT
+
+        with open("/home/jules/verification/temp_ui_v2.html", "w") as f:
+            f.write(html_content)
+
         page = browser.new_page()
-        try:
-            verify_ui_updates(page)
-        except Exception as e:
-            print(f"Verification failed: {e}")
-            page.screenshot(path="/home/jules/verification/error.png")
-        finally:
-            browser.close()
+        page.goto("file:///home/jules/verification/temp_ui_v2.html")
+
+        # 2. Click liquidity badge to open modal
+        page.locator("#liquidity-badge").click()
+        page.wait_for_selector("#chartModal")
+
+        # 3. Check DXY Button Text
+        dxy_btn = page.locator("#btn-DXY_BROAD")
+        if dxy_btn.inner_text().strip() == "DXY_BROAD":
+             print("DXY Button Text Correct: DXY_BROAD")
+        else:
+             print(f"DXY Button Text Incorrect: {dxy_btn.inner_text()}")
+
+        # 4. Take Screenshot to check layout spacing
+        page.screenshot(path="/home/jules/verification/frontend_verify_v2.png")
+        print("Screenshot taken.")
+
+        browser.close()
+
+if __name__ == "__main__":
+    verify_frontend()

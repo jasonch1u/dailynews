@@ -439,13 +439,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <div class="modal-content">
             <button class="modal-close" onclick="closeChartModal()">&times;</button>
 
-            <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+            <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px; margin-right: 50px;">
                 <button class="primary-btn" onclick="switchChart('liquidity')" id="btn-liquidity">Fed 流動性</button>
                 <button class="primary-btn" onclick="switchChart('VIX')" id="btn-VIX">VIX 恐慌指數</button>
-                <button class="primary-btn" onclick="switchChart('M2')" id="btn-M2">M2 貨幣供給</button>
-                <button class="primary-btn" onclick="switchChart('M1_M2_YOY')" id="btn-M1_M2_YOY">M1 vs M2 年增率</button>
+                <button class="primary-btn" onclick="switchChart('M2_COMBO')" id="btn-M2_COMBO">M2 供給 & 年增率</button>
                 <button class="primary-btn" onclick="switchChart('10Y2Y')" id="btn-10Y2Y">10Y-2Y 公債利差</button>
-                <button class="primary-btn" onclick="switchChart('DXY_BROAD')" id="btn-DXY_BROAD">美元指數</button>
+                <button class="primary-btn" onclick="switchChart('DXY_BROAD')" id="btn-DXY_BROAD">DXY_BROAD</button>
                 <button class="primary-btn" onclick="refreshCurrentChart()" id="btn-refresh-chart" style="margin-left:auto; background:#6c757d;">🔄 更新數據</button>
             </div>
 
@@ -559,7 +558,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
              try {
                  if (currentChartType === 'liquidity') {
                      await fetchLiquidity(true);
-                 } else if (currentChartType === 'M1_M2_YOY') {
+                 } else if (currentChartType === 'M2_COMBO') {
+                     await fetchEconomics('M2', true);
                      await fetchEconomics('M1_YOY', true);
                      await fetchEconomics('M2_YOY', true);
                  } else {
@@ -595,13 +595,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 titleEl.innerText = '😰 VIX 恐慌指數';
                 descEl.innerHTML = '衡量市場對未來30天波動性的預期。<br>數值越高代表市場越恐慌 (通常 >20 表示警戒)。';
                 if (!chartDataCache['VIX']) await fetchEconomics('VIX');
-            } else if (type === 'M2') {
-                titleEl.innerText = '💵 M2 廣義貨幣供給';
-                descEl.innerHTML = '包含現金、活存、定存等。長期上升代表資金充沛。<br>單位: Billions USD (十億美元) (數據通常滯後 10-14 天)';
+            } else if (type === 'M2_COMBO') {
+                titleEl.innerText = '💵 M2 供給 & ✂️ 年增率 (M1/M2)';
+                descEl.innerHTML = '左軸: <span style="color:#20c997">■ M2 供給</span> (十億美元) | 右軸: <span style="color:#0d6efd">■ M1 YoY</span> vs <span style="color:#fd7e14">■ M2 YoY</span> (%)<br>2021/5/10 後數據 (避免 2020 數據失真)';
                 if (!chartDataCache['M2']) await fetchEconomics('M2');
-            } else if (type === 'M1_M2_YOY') {
-                titleEl.innerText = '✂️ M1 vs M2 年增率 (剪刀差)';
-                descEl.innerHTML = '觀察資金活化程度。<span style="color:#0d6efd">■ M1 YoY</span> > <span style="color:#fd7e14">■ M2 YoY</span> (黃金交叉) 通常有利股市。<br>單位: Percent (%)';
                 if (!chartDataCache['M1_YOY']) await fetchEconomics('M1_YOY');
                 if (!chartDataCache['M2_YOY']) await fetchEconomics('M2_YOY');
             } else if (type === '10Y2Y') {
@@ -609,8 +606,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 descEl.innerHTML = '經濟衰退指標。負值 (倒掛) 代表衰退風險高。<br>單位: Percent (%)';
                 if (!chartDataCache['10Y2Y']) await fetchEconomics('10Y2Y');
             } else if (type === 'DXY_BROAD') {
-                titleEl.innerText = '🇺🇸 廣義美元指數';
-                descEl.innerHTML = '衡量美元對一籃子貨幣的強弱。<br>美元強通常不利於風險資產。';
+                titleEl.innerText = '🇺🇸 廣義美元指數 (DXY_BROAD)';
+                descEl.innerHTML = '包含 26種 貨幣 (含人民幣、墨西哥披索等)，涵蓋美國主要貿易夥伴。<br>更能真實反映美元在全球貿易中的購買力與競爭力。';
                 if (!chartDataCache['DXY_BROAD']) await fetchEconomics('DXY_BROAD');
             }
 
@@ -679,29 +676,67 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     height: 400,
                     layout: { background: { color: '#ffffff' }, textColor: '#333' },
                     grid: { vertLines: { color: '#f0f3fa' }, horzLines: { color: '#f0f3fa' } },
-                    rightPriceScale: { scaleMargins: { top: 0.1, bottom: 0.1 } },
+                    // Default Right Scale
+                    rightPriceScale: { scaleMargins: { top: 0.1, bottom: 0.1 }, visible: true },
+                    leftPriceScale: { scaleMargins: { top: 0.1, bottom: 0.1 }, visible: false },
                     timeScale: { borderColor: '#D1D4DC' },
                 });
 
-                // Special handling for Dual Line Chart (M1 vs M2 YoY)
-                if (type === 'M1_M2_YOY') {
-                    const m1Data = chartDataCache['M1_YOY'];
-                    const m2Data = chartDataCache['M2_YOY'];
+                if (type === 'M2_COMBO') {
+                    // M2 (Left) + M1 YoY (Right) + M2 YoY (Right)
+                    const m2DataRaw = chartDataCache['M2'];
+                    const m1YoyRaw = chartDataCache['M1_YOY'];
+                    const m2YoyRaw = chartDataCache['M2_YOY'];
 
-                    if (!m1Data || !m2Data) {
+                    if (!m2DataRaw || !m1YoyRaw || !m2YoyRaw) {
                         container.innerHTML = '<p style="text-align:center; margin-top:50px;">尚無數據，請點擊「更新數據」。</p>';
                         return;
                     }
 
-                    const lineM1 = chart.addLineSeries({ color: '#0d6efd', lineWidth: 2, title: 'M1 YoY' });
-                    const lineM2 = chart.addLineSeries({ color: '#fd7e14', lineWidth: 2, title: 'M2 YoY' });
+                    // Enable Left Scale
+                    chart.applyOptions({ leftPriceScale: { visible: true } });
 
-                    lineM1.setData(m1Data);
-                    lineM2.setData(m2Data);
+                    // Filter Date > 2021-05-10
+                    const cutoff = new Date('2021-05-10');
+                    const filterFn = (d) => new Date(d.time) >= cutoff;
+
+                    const m2Data = m2DataRaw.filter(filterFn);
+                    const m1YoyData = m1YoyRaw.filter(filterFn);
+                    const m2YoyData = m2YoyRaw.filter(filterFn);
+
+                    // M2 Supply (Left) - Area Series
+                    const seriesM2 = chart.addAreaSeries({
+                        priceScaleId: 'left',
+                        lineColor: '#20c997', // Greenish
+                        topColor: 'rgba(32, 201, 151, 0.4)',
+                        bottomColor: 'rgba(32, 201, 151, 0.0)',
+                        lineWidth: 2,
+                        title: 'M2 Supply'
+                    });
+                    seriesM2.setData(m2Data);
+
+                    // M1 YoY (Right)
+                    const seriesM1Yoy = chart.addLineSeries({
+                        priceScaleId: 'right',
+                        color: '#0d6efd', // Blue
+                        lineWidth: 2,
+                        title: 'M1 YoY'
+                    });
+                    seriesM1Yoy.setData(m1YoyData);
+
+                    // M2 YoY (Right)
+                    const seriesM2Yoy = chart.addLineSeries({
+                        priceScaleId: 'right',
+                        color: '#fd7e14', // Orange
+                        lineWidth: 2,
+                        title: 'M2 YoY'
+                    });
+                    seriesM2Yoy.setData(m2YoyData);
 
                     chart.timeScale().fitContent();
+
                 } else {
-                    // Single Line Chart
+                    // Standard Single Chart
                     const data = chartDataCache[type];
                     if (!data || data.length === 0) {
                         container.innerHTML = '<p style="text-align:center; margin-top:50px;">尚無數據，請點擊「更新數據」。</p>';
@@ -711,11 +746,18 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     lineSeries = chart.addLineSeries({
                         color: type === '10Y2Y' && data[data.length-1].value < 0 ? '#dc3545' : '#0d6efd',
                         lineWidth: 2,
+                        priceScaleId: 'right'
                     });
 
-                    // Add zero line for spread
+                    // Add zero line for spread if needed (Visual guide)
                     if (type === '10Y2Y') {
-                        // Lightweight charts doesn't have simple zero line, but we can visualize it implicitly
+                         lineSeries.createPriceLine({
+                             price: 0,
+                             color: '#666',
+                             lineWidth: 1,
+                             lineStyle: 2, // Dashed
+                             axisLabelVisible: false
+                         });
                     }
 
                     lineSeries.setData(data);

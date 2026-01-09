@@ -165,19 +165,51 @@ async def summarize_news_endpoint(
             yield f"data: {json.dumps({'status': '正在從資料庫彙整今日文章...', 'step': 2})}\n\n"
             await asyncio.sleep(0.1)
 
-            # Fetch latest economic indicators for AI Context
-            eco_data = await db.get_economic_indicators()
-            # Organize by symbol, get latest value
+            # Fetch latest economic indicators for AI Context (Fetch last ~90 days for trends)
+            # Fetching 500 rows should cover all symbols for recent months
+            eco_data = await db.get_economic_indicators(limit=500)
+
             eco_context = ""
             if eco_data:
-                latest_vals = {}
+                from collections import defaultdict
+                grouped = defaultdict(list)
                 for item in eco_data:
-                     # Keep updating so we get the latest date for each symbol
-                     latest_vals[item['symbol']] = item
+                    grouped[item['symbol']].append(item)
 
-                eco_context = "\n### 最新經濟數據參考 (AI Context):\n"
-                for sym, item in latest_vals.items():
-                    eco_context += f"- {sym}: {item['value']} (Date: {item['date']})\n"
+                eco_context = "\n### 最新經濟數據參考 (AI Context - Current vs 1M ago):\n"
+                for sym, items in grouped.items():
+                    # Sort desc just in case
+                    items.sort(key=lambda x: x['date'], reverse=True)
+                    if not items: continue
+
+                    latest = items[0]
+                    latest_val = latest['value']
+                    latest_date = latest['date']
+
+                    # Find ~30 days ago
+                    prev_val = "N/A"
+                    try:
+                        curr_dt = datetime.strptime(latest_date, "%Y-%m-%d")
+                        target_dt = curr_dt - timedelta(days=30)
+
+                        # Find closest item >= 30 days ago
+                        # Since items are desc, we look for item where date <= target_dt
+                        for p in items:
+                            p_dt = datetime.strptime(p['date'], "%Y-%m-%d")
+                            if p_dt <= target_dt:
+                                prev_val = p['value']
+                                break
+                    except: pass
+
+                    trend_str = ""
+                    if prev_val != "N/A" and isinstance(latest_val, (int, float)) and isinstance(prev_val, (int, float)):
+                        try:
+                            diff = ((latest_val - prev_val) / prev_val) * 100
+                            sign = "+" if diff > 0 else ""
+                            trend_str = f" (MoM: {sign}{diff:.1f}%)"
+                        except: pass
+
+                    eco_context += f"- {sym}: {latest_val}{trend_str} [Date: {latest_date}]\n"
 
             # Helper to fetch content
             async def fetch_todays_full_articles():
