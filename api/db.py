@@ -150,6 +150,42 @@ class SupabaseClient:
                 await session.post(url, headers=self.headers, json=payload)
         except Exception: pass
 
+    # --- Pagination Helper ---
+
+    async def _fetch_all_pages(self, url, params):
+        """Helper to fetch all rows using pagination (Range header)."""
+        all_data = []
+        offset = 0
+        limit = 1000  # Supabase default max_rows is often 1000
+
+        while True:
+            # Range: start-end (inclusive)
+            headers = self.headers.copy()
+            headers["Range"] = f"{offset}-{offset + limit - 1}"
+
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers, params=params) as resp:
+                        if resp.status not in (200, 206):
+                            print(f"Error fetching page {offset}: {resp.status}")
+                            break
+
+                        data = await resp.json()
+                        if not data:
+                            break
+
+                        all_data.extend(data)
+
+                        if len(data) < limit:
+                            break
+
+                        offset += limit
+            except Exception as e:
+                print(f"Pagination Exception: {e}")
+                break
+
+        return all_data
+
     # --- Market Liquidity ---
 
     async def save_market_liquidity(self, data_list: list):
@@ -176,17 +212,9 @@ class SupabaseClient:
         url = f"{self.base_url}/rest/v1/market_liquidity"
         params = {
             "select": "date,net_liquidity,walcl,tga,rrp",
-            "order": "date.desc",
-            "limit": "30000"
+            "order": "date.desc"
         }
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=self.headers, params=params) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-        except Exception as e:
-            print(f"Error fetching market liquidity: {e}")
-        return []
+        return await self._fetch_all_pages(url, params)
 
     # --- Economic Indicators ---
 
@@ -216,25 +244,15 @@ class SupabaseClient:
         """
         if not self.is_configured: return []
         url = f"{self.base_url}/rest/v1/economic_indicators"
-        # Ensure strict sorting by date ascending to prevent chart cutoff
         params = {
             "select": "date,symbol,value",
-            "order": "date.desc",
-            "limit": "20000" # Increase limit significantly and fetch latest first
+            "order": "date.desc"
         }
         if symbol:
-            # If symbol contains comma, use 'in' operator
             if ',' in symbol:
                 symbols = symbol.split(',')
                 params["symbol"] = f"in.({','.join(symbols)})"
             else:
                 params["symbol"] = f"eq.{symbol}"
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=self.headers, params=params) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-        except Exception as e:
-            print(f"Error fetching economic indicators: {e}")
-        return []
+        return await self._fetch_all_pages(url, params)
