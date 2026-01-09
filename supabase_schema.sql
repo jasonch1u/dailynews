@@ -31,3 +31,26 @@ create table if not exists articles (
 
 -- Enable RLS for articles
 alter table articles enable row level security;
+
+-- Create table for market liquidity (Calculated metrics)
+create table if not exists market_liquidity (
+  date date primary key,
+  walcl numeric, -- Fed Assets
+  tga numeric,   -- Treasury General Account
+  rrp numeric,   -- Reverse Repo
+  net_liquidity numeric, -- The calculated metric
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table market_liquidity enable row level security;
+
+-- Create table for generic economic indicators (VIX, M2, etc.)
+create table if not exists economic_indicators (
+    date date not null,
+    symbol text not null, -- 'VIX', 'M2', 'M1', '10Y2Y', 'DXY_BROAD'
+    value numeric not null,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+    primary key (date, symbol)
+);
+
+alter table economic_indicators enable row level security;

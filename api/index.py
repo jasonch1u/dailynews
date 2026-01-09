@@ -74,6 +74,25 @@ async def get_liquidity_data(refresh: bool = False):
 
     return {"data": data}
 
+@app.get("/api/economics")
+async def get_economic_data(symbol: Optional[str] = None, refresh: bool = False):
+    """
+    Get economic indicators (VIX, M2, M1, 10Y2Y, DXY_BROAD).
+    """
+    fred = FredClient(db)
+
+    if refresh:
+        await fred.update_economic_indicators()
+
+    data = await db.get_economic_indicators(symbol)
+
+    if not data and not refresh:
+        # Try fetch if empty
+        await fred.update_economic_indicators()
+        data = await db.get_economic_indicators(symbol)
+
+    return {"data": data}
+
 @app.get("/api/summarize")
 @app.get("/summarize")
 async def summarize_news_endpoint(
@@ -95,7 +114,7 @@ async def summarize_news_endpoint(
 
     # Defaults
     all_sources = {
-        'anduril', 'blocktempo', 'cnyes', 'cnbc', 'seekingalpha', 'marketwatch',
+        'anduril', 'blocktempo', 'cnyes', 'cnbc', 'seekingalpha',
         'bbc', 'cnn', 'techcrunch', 'forbes', 'businessinsider', 'axios', 'nyt', 'reuters'
     }
     if sources:
@@ -133,6 +152,7 @@ async def summarize_news_endpoint(
         try:
             # Step 1: Scrapers
             yield f"data: {json.dumps({'status': '正在連線至各國新聞來源...', 'step': 1})}\n\n"
+            await asyncio.sleep(0.1)
 
             # Run Scrapers (30s timeout)
             try:
@@ -143,6 +163,21 @@ async def summarize_news_endpoint(
 
             # Step 2: DB Fetch
             yield f"data: {json.dumps({'status': '正在從資料庫彙整今日文章...', 'step': 2})}\n\n"
+            await asyncio.sleep(0.1)
+
+            # Fetch latest economic indicators for AI Context
+            eco_data = await db.get_economic_indicators()
+            # Organize by symbol, get latest value
+            eco_context = ""
+            if eco_data:
+                latest_vals = {}
+                for item in eco_data:
+                     # Keep updating so we get the latest date for each symbol
+                     latest_vals[item['symbol']] = item
+
+                eco_context = "\n### 最新經濟數據參考 (AI Context):\n"
+                for sym, item in latest_vals.items():
+                    eco_context += f"- {sym}: {item['value']} (Date: {item['date']})\n"
 
             # Helper to fetch content
             async def fetch_todays_full_articles():
@@ -173,8 +208,16 @@ async def summarize_news_endpoint(
 
             # Step 3: AI Generation
             yield f"data: {json.dumps({'status': 'AI 正在分析市場趨勢並撰寫報告 (請稍候)...', 'step': 3})}\n\n"
+            await asyncio.sleep(0.1)
 
-            full_text = "\n".join([f"### {a['title']}\n{a['content']}\n出處: {a['source']}\nLink: {a['url']}" for a in todays_articles])
+            # Filter out MarketWatch from database articles (double protection)
+            filtered_articles = [a for a in todays_articles if 'marketwatch' not in a['source'].lower()]
+
+            full_text = "\n".join([f"### {a['title']}\n{a['content']}\n出處: {a['source']}\nLink: {a['url']}" for a in filtered_articles])
+
+            # Append Economic Context
+            if eco_context:
+                full_text += f"\n\n---{eco_context}---"
 
             summary, prompt_used = await generate_daily_summary(full_text, api_key)
 
@@ -193,7 +236,7 @@ async def summarize_news_endpoint(
             await db.log_error("api:error", str(e))
             yield f"data: {json.dumps({'error': '系統發生錯誤', 'details': str(e)})}\n\n"
 
-    return StreamingResponse(summary_generator(), media_type="text/event-stream")
+    return StreamingResponse(summary_generator(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 @app.get("/")
 @app.get("")
