@@ -392,7 +392,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 <option value="">-- 載入中 --</option>
             </select>
             <!-- Liquidity Badge -->
-            <div id="liquidity-badge" onclick="openLiquidityModal()" title="點擊查看 Fed 流動性圖表">
+            <div id="liquidity-badge" onclick="openChartModal('liquidity')" title="點擊查看 Fed 流動性圖表">
                 Net Liquidity: <span id="liquidity-val">...</span>
             </div>
         </div>
@@ -434,17 +434,25 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
     <div id="toast-container"></div>
 
-    <!-- Liquidity Modal -->
-    <div id="liquidityModal" class="modal-overlay" onclick="if(event.target === this) closeLiquidityModal()">
+    <!-- Chart Modal (Generic) -->
+    <div id="chartModal" class="modal-overlay" onclick="if(event.target === this) closeChartModal()">
         <div class="modal-content">
-            <button class="modal-close" onclick="closeLiquidityModal()">&times;</button>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h2 style="margin:0;">🏦 Fed Net Liquidity 趨勢圖</h2>
-                <button class="primary-btn" onclick="fetchLiquidity(true)" style="padding: 4px 10px; font-size: 0.8rem;">🔄 更新數據</button>
+            <button class="modal-close" onclick="closeChartModal()">&times;</button>
+
+            <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+                <button class="primary-btn" onclick="switchChart('liquidity')" id="btn-liquidity">Fed 流動性</button>
+                <button class="primary-btn" onclick="switchChart('VIX')" id="btn-VIX">VIX 恐慌指數</button>
+                <button class="primary-btn" onclick="switchChart('M2')" id="btn-M2">M2 貨幣供給</button>
+                <button class="primary-btn" onclick="switchChart('10Y2Y')" id="btn-10Y2Y">10Y-2Y 公債利差</button>
+                <button class="primary-btn" onclick="switchChart('DXY_BROAD')" id="btn-DXY_BROAD">美元指數</button>
+                <button class="primary-btn" onclick="refreshCurrentChart()" style="margin-left:auto; background:#6c757d;">🔄 更新數據</button>
             </div>
-            <p style="color:#666; font-size:0.9rem; margin: 10px 0;">
-                Net Liquidity = Fed Assets - TGA - RRP (每週三更新)<br>
-                單位: Trillion USD (兆美元)
+
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2 style="margin:0;" id="chart-title">圖表載入中...</h2>
+            </div>
+            <p style="color:#666; font-size:0.9rem; margin: 10px 0;" id="chart-desc">
+                ...
             </p>
             <div id="chart-container"></div>
         </div>
@@ -523,20 +531,84 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         window.addEventListener('DOMContentLoaded', async () => {
             await loadHistoryDates();
-            fetchLiquidity(false); // Fetch on load
+            fetchLiquidity(false); // Fetch on load (Badge only)
         });
 
-        // --- Liquidity Logic ---
+        // --- Chart Logic ---
         let chart;
         let lineSeries;
+        let currentChartType = 'liquidity';
+        let chartDataCache = {};
 
-        function openLiquidityModal() {
-            document.getElementById('liquidityModal').style.display = 'flex';
-            if (!chart) initChart(); // Init if not exists
+        function openChartModal(type = 'liquidity') {
+            document.getElementById('chartModal').style.display = 'flex';
+            switchChart(type);
         }
 
-        function closeLiquidityModal() {
-            document.getElementById('liquidityModal').style.display = 'none';
+        function closeChartModal() {
+            document.getElementById('chartModal').style.display = 'none';
+        }
+
+        async function refreshCurrentChart() {
+             if (currentChartType === 'liquidity') {
+                 await fetchLiquidity(true);
+             } else {
+                 await fetchEconomics(currentChartType, true);
+             }
+             renderChart(currentChartType);
+        }
+
+        async function switchChart(type) {
+            currentChartType = type;
+
+            // Highlight button
+            document.querySelectorAll('#chartModal .primary-btn').forEach(b => b.style.opacity = '0.6');
+            const btn = document.getElementById(`btn-${type}`);
+            if(btn) btn.style.opacity = '1';
+
+            // Set Title & Desc
+            const titleEl = document.getElementById('chart-title');
+            const descEl = document.getElementById('chart-desc');
+
+            if (type === 'liquidity') {
+                titleEl.innerText = '🏦 Fed Net Liquidity 趨勢圖';
+                descEl.innerHTML = 'Net Liquidity = Fed Assets - TGA - RRP (每週三更新)<br>單位: Trillion USD (兆美元)';
+                if (!chartDataCache['liquidity']) await fetchLiquidity(false);
+            } else if (type === 'VIX') {
+                titleEl.innerText = '😰 VIX 恐慌指數';
+                descEl.innerHTML = '衡量市場對未來30天波動性的預期。<br>數值越高代表市場越恐慌 (通常 >20 表示警戒)。';
+                if (!chartDataCache['VIX']) await fetchEconomics('VIX');
+            } else if (type === 'M2') {
+                titleEl.innerText = '💵 M2 廣義貨幣供給';
+                descEl.innerHTML = '包含現金、活存、定存等。長期上升代表資金充沛。<br>單位: Billions USD (十億美元)';
+                if (!chartDataCache['M2']) await fetchEconomics('M2');
+            } else if (type === '10Y2Y') {
+                titleEl.innerText = '📉 10年-2年 公債利差';
+                descEl.innerHTML = '經濟衰退指標。負值 (倒掛) 代表衰退風險高。<br>單位: Percent (%)';
+                if (!chartDataCache['10Y2Y']) await fetchEconomics('10Y2Y');
+            } else if (type === 'DXY_BROAD') {
+                titleEl.innerText = '🇺🇸 廣義美元指數';
+                descEl.innerHTML = '衡量美元對一籃子貨幣的強弱。<br>美元強通常不利於風險資產。';
+                if (!chartDataCache['DXY_BROAD']) await fetchEconomics('DXY_BROAD');
+            }
+
+            renderChart(type);
+        }
+
+        async function fetchEconomics(symbol, refresh=false) {
+            try {
+                const res = await fetch(`/api/economics?symbol=${symbol}${refresh ? '&refresh=true' : ''}`);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.data) {
+                        // Transform to chart format
+                        chartDataCache[symbol] = json.data.map(d => ({
+                            time: d.date,
+                            value: d.value
+                        }));
+                    }
+                }
+            } catch (e) { console.error(e); }
         }
 
         async function fetchLiquidity(refresh = false) {
@@ -554,20 +626,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                         const valTrillion = (latest.net_liquidity / 1000000).toFixed(2);
                         valSpan.innerText = `$${valTrillion}T`;
 
-                        // Prepare Chart Data
-                        // Lightweight Charts expects { time: 'yyyy-mm-dd', value: 123 }
-                        const chartData = data.map(d => ({
+                        // Cache Data
+                        chartDataCache['liquidity'] = data.map(d => ({
                             time: d.date,
-                            value: d.net_liquidity / 1000000 // Convert Millions to Trillions
+                            value: d.net_liquidity / 1000000 // Trillions
                         }));
-
-                        if (chart && lineSeries) {
-                            lineSeries.setData(chartData);
-                            chart.timeScale().fitContent();
-                        } else {
-                            // Store for later init
-                            window.liquidityData = chartData;
-                        }
                     } else {
                          valSpan.innerText = "N/A";
                     }
@@ -578,56 +641,51 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             }
         }
 
-        function initChart() {
-             if (!window.liquidityData) return;
-
+        function renderChart(type) {
              const container = document.getElementById('chart-container');
-             container.innerHTML = ''; // Clear
+             container.innerHTML = '';
+
+             const data = chartDataCache[type];
+             if (!data || data.length === 0) {
+                 container.innerHTML = '<p style="text-align:center; margin-top:50px;">尚無數據，請點擊「更新數據」。</p>';
+                 return;
+             }
 
              try {
                  chart = LightweightCharts.createChart(container, {
                     width: container.clientWidth,
                     height: 400,
-                    layout: {
-                        background: { color: '#ffffff' },
-                        textColor: '#333',
-                    },
-                    grid: {
-                        vertLines: { color: '#f0f3fa' },
-                        horzLines: { color: '#f0f3fa' },
-                    },
-                    rightPriceScale: {
-                        scaleMargins: {
-                            top: 0.1,
-                            bottom: 0.1,
-                        },
-                    },
-                    timeScale: {
-                        borderColor: '#D1D4DC',
-                    },
+                    layout: { background: { color: '#ffffff' }, textColor: '#333' },
+                    grid: { vertLines: { color: '#f0f3fa' }, horzLines: { color: '#f0f3fa' } },
+                    rightPriceScale: { scaleMargins: { top: 0.1, bottom: 0.1 } },
+                    timeScale: { borderColor: '#D1D4DC' },
                 });
 
-                // Debug log
-                console.log("Chart initialized:", chart);
-
                 lineSeries = chart.addLineSeries({
-                    color: '#0d6efd',
+                    color: type === '10Y2Y' && data[data.length-1].value < 0 ? '#dc3545' : '#0d6efd',
                     lineWidth: 2,
                 });
 
-                lineSeries.setData(window.liquidityData);
+                // Add zero line for spread
+                if (type === '10Y2Y') {
+                    // Lightweight charts doesn't have simple zero line, but we can visualize it implicitly
+                }
+
+                lineSeries.setData(data);
                 chart.timeScale().fitContent();
              } catch (e) {
                  console.error("Chart init error:", e);
-                 container.innerHTML = '<p style="color:red; text-align:center; margin-top:50px;">圖表載入失敗，請重新整理頁面。</p>';
              }
 
-            // Handle resize
-            new ResizeObserver(entries => {
-                if (entries.length === 0 || entries[0].target !== container) { return; }
-                const newRect = entries[0].contentRect;
-                chart.applyOptions({ width: newRect.width, height: newRect.height });
-            }).observe(container);
+             // Handle resize
+             if (!window.chartObserver) {
+                 window.chartObserver = new ResizeObserver(entries => {
+                    if (entries.length === 0 || entries[0].target !== container) { return; }
+                    const newRect = entries[0].contentRect;
+                    if (chart) chart.applyOptions({ width: newRect.width, height: newRect.height });
+                 });
+                 window.chartObserver.observe(container);
+             }
         }
 
         async function loadHistoryDates() {

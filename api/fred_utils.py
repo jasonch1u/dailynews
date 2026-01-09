@@ -145,3 +145,43 @@ class FredClient:
         await self.db_client.save_market_liquidity(processed_data)
 
         return {"status": "success", "count": len(processed_data)}
+
+    async def update_economic_indicators(self):
+        """
+        Fetches additional economic indicators:
+        - VIX (VIXCLS) - Daily
+        - M2 (WM2NS) - Weekly
+        - M1 (WM1NS) - Weekly
+        - 10Y-2Y Spread (T10Y2Y) - Daily
+        - Dollar Index (DTWEXBGS) - Daily (Weekly?) -> DTWEXBGS is Nominal Broad US Dollar Index (Daily)
+        """
+        if not self.api_key:
+            return {"status": "error", "message": "FRED_API_KEY missing"}
+
+        indicators = [
+            {"id": "VIXCLS", "symbol": "VIX"},
+            {"id": "WM2NS", "symbol": "M2"},
+            {"id": "WM1NS", "symbol": "M1"},
+            {"id": "T10Y2Y", "symbol": "10Y2Y"},
+            {"id": "DTWEXBGS", "symbol": "DXY_BROAD"} # Broad Dollar Index
+        ]
+
+        total_saved = 0
+
+        for ind in indicators:
+            print(f"Fetching {ind['symbol']} ({ind['id']})...")
+            # Fetch last 5 years to be safe, or just 2014 like liquidity
+            data = await self.fetch_series(ind['id'], start_date="2020-01-01")
+
+            if data:
+                # Transform for DB: {date, symbol, value}
+                formatted_data = [
+                    {"date": item["date"], "symbol": ind["symbol"], "value": item["value"]}
+                    for item in data
+                ]
+                await self.db_client.save_economic_indicators(formatted_data)
+                total_saved += len(formatted_data)
+            else:
+                print(f"No data for {ind['symbol']}")
+
+        return {"status": "success", "count": total_saved}

@@ -186,3 +186,47 @@ class SupabaseClient:
         except Exception as e:
             print(f"Error fetching market liquidity: {e}")
         return []
+
+    # --- Economic Indicators ---
+
+    async def save_economic_indicators(self, data_list: list):
+        """
+        Upserts economic indicators.
+        data_list: List of dicts with keys: date, symbol, value
+        """
+        if not self.is_configured or not data_list: return
+        url = f"{self.base_url}/rest/v1/economic_indicators"
+
+        headers = self.headers.copy()
+        headers["Prefer"] = "resolution=merge-duplicates"
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Supabase limits bulk insert size? Split if too large?
+                # 5 years daily ~ 1800 rows. Should be fine.
+                await session.post(url, headers=headers, json=data_list)
+        except Exception as e:
+            print(f"Error saving economic indicators: {e}")
+
+    async def get_economic_indicators(self, symbol: str = None):
+        """
+        Fetch economic indicators.
+        If symbol provided, filter by it.
+        """
+        if not self.is_configured: return []
+        url = f"{self.base_url}/rest/v1/economic_indicators"
+        params = {
+            "select": "date,symbol,value",
+            "order": "date.asc"
+        }
+        if symbol:
+            params["symbol"] = f"eq.{symbol}"
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=self.headers, params=params) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+        except Exception as e:
+            print(f"Error fetching economic indicators: {e}")
+        return []
