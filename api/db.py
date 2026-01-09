@@ -218,10 +218,16 @@ class SupabaseClient:
         # Ensure strict sorting by date ascending to prevent chart cutoff
         params = {
             "select": "date,symbol,value",
-            "order": "date.asc"
+            "order": "date.asc",
+            "limit": "5000" # Increase limit to ensure we get full history (5 years daily ~1800 rows)
         }
         if symbol:
-            params["symbol"] = f"eq.{symbol}"
+            # If symbol contains comma, use 'in' operator
+            if ',' in symbol:
+                symbols = symbol.split(',')
+                params["symbol"] = f"in.({','.join(symbols)})"
+            else:
+                params["symbol"] = f"eq.{symbol}"
 
         try:
             async with aiohttp.ClientSession() as session:

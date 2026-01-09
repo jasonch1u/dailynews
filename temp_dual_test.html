@@ -1,5 +1,4 @@
-# This file contains the HTML template for the frontend.
-HTML_CONTENT = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
@@ -443,7 +442,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 <button class="primary-btn" onclick="switchChart('liquidity')" id="btn-liquidity">Fed 流動性</button>
                 <button class="primary-btn" onclick="switchChart('VIX')" id="btn-VIX">VIX 恐慌指數</button>
                 <button class="primary-btn" onclick="switchChart('M2')" id="btn-M2">M2 貨幣供給</button>
-                <button class="primary-btn" onclick="switchChart('M1_M2_YOY')" id="btn-M1_M2_YOY">M1 vs M2 年增率</button>
                 <button class="primary-btn" onclick="switchChart('10Y2Y')" id="btn-10Y2Y">10Y-2Y 公債利差</button>
                 <button class="primary-btn" onclick="switchChart('DXY_BROAD')" id="btn-DXY_BROAD">美元指數</button>
                 <button class="primary-btn" onclick="refreshCurrentChart()" id="btn-refresh-chart" style="margin-left:auto; background:#6c757d;">🔄 更新數據</button>
@@ -559,9 +557,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
              try {
                  if (currentChartType === 'liquidity') {
                      await fetchLiquidity(true);
-                 } else if (currentChartType === 'M1_M2_YOY') {
-                     await fetchEconomics('M1_YOY', true);
-                     await fetchEconomics('M2_YOY', true);
                  } else {
                      await fetchEconomics(currentChartType, true);
                  }
@@ -599,11 +594,6 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 titleEl.innerText = '💵 M2 廣義貨幣供給';
                 descEl.innerHTML = '包含現金、活存、定存等。長期上升代表資金充沛。<br>單位: Billions USD (十億美元) (數據通常滯後 10-14 天)';
                 if (!chartDataCache['M2']) await fetchEconomics('M2');
-            } else if (type === 'M1_M2_YOY') {
-                titleEl.innerText = '✂️ M1 vs M2 年增率 (剪刀差)';
-                descEl.innerHTML = '觀察資金活化程度。<span style="color:#0d6efd">■ M1 YoY</span> > <span style="color:#fd7e14">■ M2 YoY</span> (黃金交叉) 通常有利股市。<br>單位: Percent (%)';
-                if (!chartDataCache['M1_YOY']) await fetchEconomics('M1_YOY');
-                if (!chartDataCache['M2_YOY']) await fetchEconomics('M2_YOY');
             } else if (type === '10Y2Y') {
                 titleEl.innerText = '📉 10年-2年 公債利差';
                 descEl.innerHTML = '經濟衰退指標。負值 (倒掛) 代表衰退風險高。<br>單位: Percent (%)';
@@ -1020,4 +1010,4 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         }
     </script>
 </body>
-</html>"""
+</html>
