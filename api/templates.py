@@ -643,9 +643,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 const res = await fetch(`/api/liquidity${refresh ? '?refresh=true' : ''}`);
                 if (res.ok) {
                     const json = await res.json();
-                    const data = json.data;
+                    let data = json.data;
 
                     if (data && data.length > 0) {
+                        // Ensure data is sorted by date ascending (Fix for desc API sort)
+                        data.sort((a, b) => new Date(a.date) - new Date(b.date));
+
                         // Update Badge (Latest value)
                         const latest = data[data.length - 1];
                         const valTrillion = (latest.net_liquidity / 1000000).toFixed(2);

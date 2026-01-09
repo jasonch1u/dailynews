@@ -176,7 +176,8 @@ class SupabaseClient:
         url = f"{self.base_url}/rest/v1/market_liquidity"
         params = {
             "select": "date,net_liquidity,walcl,tga,rrp",
-            "order": "date.asc"
+            "order": "date.desc",
+            "limit": "10000"
         }
         try:
             async with aiohttp.ClientSession() as session:
@@ -218,8 +219,8 @@ class SupabaseClient:
         # Ensure strict sorting by date ascending to prevent chart cutoff
         params = {
             "select": "date,symbol,value",
-            "order": "date.asc",
-            "limit": "5000" # Increase limit to ensure we get full history (5 years daily ~1800 rows)
+            "order": "date.desc",
+            "limit": "20000" # Increase limit significantly and fetch latest first
         }
         if symbol:
             # If symbol contains comma, use 'in' operator
