@@ -12,6 +12,7 @@ from api.llm_utils import translate_text, generate_daily_summary
 from scrapers import run_all_scrapers
 from api.templates import HTML_CONTENT
 from api.db import SupabaseClient
+from api.fred_utils import FredClient
 
 # Load environment variables
 load_dotenv()
@@ -50,6 +51,28 @@ async def get_articles_endpoint(date: str):
     """
     articles = await db.get_articles_by_date(date)
     return {"articles": articles}
+
+@app.get("/api/liquidity")
+async def get_liquidity_data(refresh: bool = False):
+    """
+    Get market liquidity data (Net Liquidity, WALCL, TGA, RRP).
+    If refresh=True, triggers FRED fetch and update.
+    """
+    fred = FredClient(db)
+
+    if refresh:
+        # Trigger update
+        await fred.update_market_liquidity()
+
+    # Return data from DB
+    data = await db.get_market_liquidity()
+
+    # If empty and not forcing refresh, maybe we should try fetching once?
+    if not data and not refresh:
+         await fred.update_market_liquidity()
+         data = await db.get_market_liquidity()
+
+    return {"data": data}
 
 @app.get("/api/summarize")
 @app.get("/summarize")

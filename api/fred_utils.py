@@ -1,0 +1,147 @@
+import aiohttp
+import os
+import asyncio
+from datetime import datetime, timedelta
+from typing import List, Dict, Any
+
+class FredClient:
+    def __init__(self, db_client):
+        self.api_key = os.getenv("FRED_API_KEY")
+        self.base_url = "https://api.stlouisfed.org/fred/series/observations"
+        self.db_client = db_client
+
+    async def fetch_series(self, series_id: str, start_date: str = "2014-01-01") -> List[Dict[str, Any]]:
+        """
+        Fetch series data from FRED API.
+        Returns a list of dicts: {'date': 'YYYY-MM-DD', 'value': float}
+        """
+        if not self.api_key:
+            print("FRED_API_KEY not set.")
+            return []
+
+        params = {
+            "series_id": series_id,
+            "api_key": self.api_key,
+            "file_type": "json",
+            "observation_start": start_date
+        }
+
+        # Determine frequency to minimize data transfer if possible,
+        # but FRED API 'frequency' param mainly aggregates.
+        # For RRP (Daily), we might fetch all and filter later, or trust the caller.
+        # WALCL and WDTGAL are Weekly (Wed).
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(self.base_url, params=params) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        observations = data.get("observations", [])
+                        result = []
+                        for obs in observations:
+                            val = obs.get("value")
+                            # FRED returns "." for missing values
+                            if val and val != ".":
+                                result.append({
+                                    "date": obs.get("date"),
+                                    "value": float(val)
+                                })
+                        return result
+                    else:
+                        print(f"Error fetching {series_id}: {resp.status}")
+                        return []
+            except Exception as e:
+                print(f"Exception fetching {series_id}: {e}")
+                return []
+
+    async def update_market_liquidity(self):
+        """
+        Fetches WALCL, WDTGAL, RRPONTSYD, aligns them by Wednesday,
+        calculates Net Liquidity, and saves to DB.
+        """
+        if not self.api_key:
+            return {"status": "error", "message": "FRED_API_KEY missing"}
+
+        print("Fetching FRED data...")
+        # 1. Fetch all series
+        # WALCL: Assets (Weekly, Wed) -> Unit: Millions
+        # WDTGAL: TGA (Weekly, Wed) -> Unit: Millions (Usually)
+        # RRPONTSYD: RRP (Daily) -> Unit: Billions (Usually! Need to verify units)
+
+        # CHECK UNITS:
+        # WALCL: Millions of U.S. Dollars
+        # WDTGAL: Millions of U.S. Dollars
+        # RRPONTSYD: Billions of U.S. Dollars (Wait, let's verify via Google or assumption)
+        # RRPONTSYD on FRED says "Billions of U.S. Dollars".
+        # WALCL/WDTGAL on FRED says "Millions of U.S. Dollars".
+        # We need to normalize to Billions or Trillions for display, but for calculation:
+        # Net Liquidity (Millions) = WALCL (Mil) - WDTGAL (Mil) - (RRP (Bil) * 1000)
+
+        walcl_data, wdtgal_data, rrp_data = await asyncio.gather(
+            self.fetch_series("WALCL"),
+            self.fetch_series("WDTGAL"), # Or WTREGEN
+            self.fetch_series("RRPONTSYD")
+        )
+
+        if not walcl_data:
+            return {"status": "error", "message": "Failed to fetch WALCL"}
+
+        # 2. Convert to lookup dicts for easier alignment
+        # Structure: {'YYYY-MM-DD': value_in_millions}
+
+        # WALCL is already in Millions
+        walcl_map = {item['date']: item['value'] for item in walcl_data}
+
+        # WDTGAL is already in Millions
+        wdtgal_map = {item['date']: item['value'] for item in wdtgal_data}
+
+        # RRP is in Billions -> Convert to Millions
+        rrp_map = {item['date']: item['value'] * 1000 for item in rrp_data}
+
+        # 3. Align based on WALCL dates (Wednesdays)
+        # We iterate through WALCL dates. If a date exists in WALCL,
+        # we look for it in WDTGAL and RRP.
+        # Since RRP is daily, it should have the Wednesday date unless it's a holiday.
+        # If holiday, FRED usually shifts the weekly release or the daily data point might be missing.
+        # We'll skip points where data is incomplete or try to fill forward/zero?
+        # Strict approach: skip if missing.
+
+        processed_data = []
+
+        # Sort dates to ensure order
+        sorted_dates = sorted(walcl_map.keys())
+
+        for date_str in sorted_dates:
+            walcl_val = walcl_map[date_str]
+
+            # Get TGA (expecting same date as it's Wednesday series)
+            tga_val = wdtgal_map.get(date_str)
+
+            # Get RRP (expecting same date)
+            rrp_val = rrp_map.get(date_str)
+
+            # RRP fallback: If RRP is missing on Wednesday (holiday),
+            # maybe check prev day? For now, strict.
+            # Note: RRP started later (2013). Before that RRP=0 effectively for this metric.
+            if rrp_val is None:
+                # If date is before 2014, assume 0 if we fetched back to 2002?
+                # But we fetched from 2014.
+                # If missing inside the range, it's a gap.
+                pass
+
+            if tga_val is not None and rrp_val is not None:
+                net_liquidity = walcl_val - tga_val - rrp_val
+                processed_data.append({
+                    "date": date_str,
+                    "walcl": walcl_val,     # Millions
+                    "tga": tga_val,         # Millions
+                    "rrp": rrp_val,         # Millions
+                    "net_liquidity": net_liquidity # Millions
+                })
+
+        # 4. Save to DB
+        # We will use upsert via db_client (need to add a method there)
+        print(f"Computed {len(processed_data)} data points. Saving to DB...")
+        await self.db_client.save_market_liquidity(processed_data)
+
+        return {"status": "success", "count": len(processed_data)}
