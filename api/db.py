@@ -177,7 +177,7 @@ class SupabaseClient:
         params = {
             "select": "date,net_liquidity,walcl,tga,rrp",
             "order": "date.desc",
-            "limit": "10000"
+            "limit": "30000"
         }
         try:
             async with aiohttp.ClientSession() as session:
