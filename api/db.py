@@ -215,6 +215,7 @@ class SupabaseClient:
         """
         if not self.is_configured: return []
         url = f"{self.base_url}/rest/v1/economic_indicators"
+        # Ensure strict sorting by date ascending to prevent chart cutoff
         params = {
             "select": "date,symbol,value",
             "order": "date.asc"

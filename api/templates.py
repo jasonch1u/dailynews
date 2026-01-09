@@ -593,7 +593,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 if (!chartDataCache['VIX']) await fetchEconomics('VIX');
             } else if (type === 'M2') {
                 titleEl.innerText = '💵 M2 廣義貨幣供給';
-                descEl.innerHTML = '包含現金、活存、定存等。長期上升代表資金充沛。<br>單位: Billions USD (十億美元)';
+                descEl.innerHTML = '包含現金、活存、定存等。長期上升代表資金充沛。<br>單位: Billions USD (十億美元) (數據通常滯後 10-14 天)';
                 if (!chartDataCache['M2']) await fetchEconomics('M2');
             } else if (type === '10Y2Y') {
                 titleEl.innerText = '📉 10年-2年 公債利差';
@@ -614,6 +614,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 if (res.ok) {
                     const json = await res.json();
                     if (json.data) {
+                        // Ensure data is sorted by date ascending (Frontend double-check)
+                        json.data.sort((a, b) => new Date(a.date) - new Date(b.date));
+
                         // Transform to chart format
                         chartDataCache[symbol] = json.data.map(d => ({
                             time: d.date,
