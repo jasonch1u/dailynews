@@ -445,7 +445,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 <button class="primary-btn" onclick="switchChart('M2')" id="btn-M2">M2 貨幣供給</button>
                 <button class="primary-btn" onclick="switchChart('10Y2Y')" id="btn-10Y2Y">10Y-2Y 公債利差</button>
                 <button class="primary-btn" onclick="switchChart('DXY_BROAD')" id="btn-DXY_BROAD">美元指數</button>
-                <button class="primary-btn" onclick="refreshCurrentChart()" style="margin-left:auto; background:#6c757d;">🔄 更新數據</button>
+                <button class="primary-btn" onclick="refreshCurrentChart()" id="btn-refresh-chart" style="margin-left:auto; background:#6c757d;">🔄 更新數據</button>
             </div>
 
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -550,12 +550,25 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         }
 
         async function refreshCurrentChart() {
-             if (currentChartType === 'liquidity') {
-                 await fetchLiquidity(true);
-             } else {
-                 await fetchEconomics(currentChartType, true);
+             const btn = document.getElementById('btn-refresh-chart');
+             const originalText = btn.innerText;
+             btn.disabled = true;
+             btn.innerText = "更新中...";
+
+             try {
+                 if (currentChartType === 'liquidity') {
+                     await fetchLiquidity(true);
+                 } else {
+                     await fetchEconomics(currentChartType, true);
+                 }
+                 renderChart(currentChartType);
+                 showToast("數據更新完成", "success");
+             } catch (e) {
+                 showToast("更新失敗: " + e.message, "error");
+             } finally {
+                 btn.disabled = false;
+                 btn.innerText = originalText;
              }
-             renderChart(currentChartType);
         }
 
         async function switchChart(type) {
