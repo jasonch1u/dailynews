@@ -237,10 +237,11 @@ class SupabaseClient:
         except Exception as e:
             print(f"Error saving economic indicators: {e}")
 
-    async def get_economic_indicators(self, symbol: str = None):
+    async def get_economic_indicators(self, symbol: str = None, limit: int = None):
         """
         Fetch economic indicators.
         If symbol provided, filter by it.
+        If limit provided, fetch only top N (single page).
         """
         if not self.is_configured: return []
         url = f"{self.base_url}/rest/v1/economic_indicators"
@@ -255,4 +256,16 @@ class SupabaseClient:
             else:
                 params["symbol"] = f"eq.{symbol}"
 
+        if limit:
+            params['limit'] = str(limit)
+            # Simple fetch for limited results
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=self.headers, params=params) as resp:
+                        if resp.status == 200:
+                            return await resp.json()
+            except Exception: pass
+            return []
+
+        # Otherwise fetch all history
         return await self._fetch_all_pages(url, params)

@@ -439,12 +439,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <div class="modal-content">
             <button class="modal-close" onclick="closeChartModal()">&times;</button>
 
-            <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+            <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px; margin-right: 50px;">
                 <button class="primary-btn" onclick="switchChart('liquidity')" id="btn-liquidity">Fed 流動性</button>
                 <button class="primary-btn" onclick="switchChart('VIX')" id="btn-VIX">VIX 恐慌指數</button>
                 <button class="primary-btn" onclick="switchChart('M2_COMBO')" id="btn-M2_COMBO">M2 供給 & 年增率</button>
                 <button class="primary-btn" onclick="switchChart('10Y2Y')" id="btn-10Y2Y">10Y-2Y 公債利差</button>
-                <button class="primary-btn" onclick="switchChart('DXY_BROAD')" id="btn-DXY_BROAD">美元指數</button>
+                <button class="primary-btn" onclick="switchChart('DXY_BROAD')" id="btn-DXY_BROAD">DXY_BROAD</button>
                 <button class="primary-btn" onclick="refreshCurrentChart()" id="btn-refresh-chart" style="margin-left:auto; background:#6c757d;">🔄 更新數據</button>
             </div>
 
@@ -606,8 +606,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 descEl.innerHTML = '經濟衰退指標。負值 (倒掛) 代表衰退風險高。<br>單位: Percent (%)';
                 if (!chartDataCache['10Y2Y']) await fetchEconomics('10Y2Y');
             } else if (type === 'DXY_BROAD') {
-                titleEl.innerText = '🇺🇸 廣義美元指數';
-                descEl.innerHTML = '衡量美元對一籃子貨幣的強弱。<br>美元強通常不利於風險資產。';
+                titleEl.innerText = '🇺🇸 廣義美元指數 (DXY_BROAD)';
+                descEl.innerHTML = '包含 26種 貨幣 (含人民幣、墨西哥披索等)，涵蓋美國主要貿易夥伴。<br>更能真實反映美元在全球貿易中的購買力與競爭力。';
                 if (!chartDataCache['DXY_BROAD']) await fetchEconomics('DXY_BROAD');
             }
 
@@ -704,10 +704,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     const m1YoyData = m1YoyRaw.filter(filterFn);
                     const m2YoyData = m2YoyRaw.filter(filterFn);
 
-                    // M2 Supply (Left)
-                    const seriesM2 = chart.addLineSeries({
+                    // M2 Supply (Left) - Area Series
+                    const seriesM2 = chart.addAreaSeries({
                         priceScaleId: 'left',
-                        color: '#20c997', // Greenish
+                        lineColor: '#20c997', // Greenish
+                        topColor: 'rgba(32, 201, 151, 0.4)',
+                        bottomColor: 'rgba(32, 201, 151, 0.0)',
                         lineWidth: 2,
                         title: 'M2 Supply'
                     });
