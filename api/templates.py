@@ -443,7 +443,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             </select>
             <!-- Liquidity Badge (Moved to Left) -->
             <div id="liquidity-badge" onclick="openChartModal('liquidity')" title="點擊查看 Fed 流動性圖表">
-                FED: <span id="liquidity-val">...</span>
+                FED 流動性 <span id="liquidity-val">...</span>
             </div>
         </div>
 
