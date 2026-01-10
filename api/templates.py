@@ -18,6 +18,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             --text-color: #333;
             --header-height: 70px;
         }
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             margin: 0;
@@ -51,6 +54,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             gap: 15px;
         }
 
+        .logo-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
         h1 {
             font-size: 1.25rem;
             margin: 0;
@@ -68,9 +77,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             font-size: 0.9rem;
             font-weight: 600;
             cursor: pointer;
-            margin-left: 15px;
             white-space: nowrap;
             transition: all 0.2s;
+            margin: 0; /* Reset margin, use gap */
         }
         #liquidity-badge:hover {
             background: #d0e8ff;
@@ -90,15 +99,18 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         .source-btn {
             background: #f8f9fa;
             border: 1px solid #dee2e6;
-            padding: 8px 12px;
-            border-radius: 6px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            padding: 0;
             cursor: pointer;
-            font-size: 0.9rem;
+            font-size: 1.2rem;
             display: flex;
             align-items: center;
-            gap: 5px;
+            justify-content: center;
+            transition: all 0.2s;
         }
-        .source-btn:hover { background: #e9ecef; }
+        .source-btn:hover { background: #e9ecef; transform: scale(1.05); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .source-content {
             display: none;
             position: absolute;
@@ -116,10 +128,11 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         .source-dropdown:hover .source-content {
             display: block;
         }
-        .source-content label {
+        .source-content div {
             display: block;
             padding: 5px 0;
-            cursor: pointer;
+            color: #333;
+            font-size: 0.9rem;
         }
 
         select {
@@ -160,16 +173,51 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             align-items: start;
         }
 
-        @media (max-width: 900px) {
+        @media (max-width: 768px) {
             .main-container { grid-template-columns: 1fr; }
+            
+            /* Mobile Header Adjustments */
+            body { padding-top: 0; }
             header {
-                height: auto;
-                flex-direction: column;
-                padding: 10px 20px;
+                position: sticky;
+                top: 0;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
                 gap: 10px;
+                height: auto;
+                padding: 10px 20px;
             }
-            body { padding-top: 140px; } /* Adjust for taller header */
-            .header-controls { flex-wrap: wrap; justify-content: center; }
+            
+            /* Unwrap containers to allow Grid placement */
+            .header-left, .header-controls {
+                display: contents;
+            }
+
+            /* Row 1: Title (Left) & Date (Right) */
+            .logo-group { grid-column: 1 / 2; }
+            h1 { font-size: 1.1rem; }
+            #historySelect { 
+                grid-column: 2 / 3; 
+                justify-self: end; 
+                width: auto; 
+                margin: 0;
+            }
+
+            /* Row 2: FED (Left) & Button (Right) */
+            #liquidity-badge { grid-column: 1 / 2; width: 100%; text-align: center; margin: 0; }
+            #generateBtn { grid-column: 2 / 3; width: 100%; }
+
+            /* Hide Source */
+            .source-dropdown { display: none; }
+            
+            /* Mobile Button Text */
+            .btn-desktop { display: none; }
+            .btn-mobile { display: inline; }
+            #generateBtn { padding: 8px 12px; }
+        }
+        
+        @media (min-width: 769px) {
+            .btn-mobile { display: none; }
         }
 
         /* Status Bar and Progress */
@@ -385,43 +433,49 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 <body>
     <header>
         <div class="header-left">
-            <div style="font-size: 1.5rem;">📰</div>
-            <h1>每日新聞 AI 摘要</h1>
-            <!-- Moved Date Selector Here -->
-            <select id="historySelect" onchange="handleDateChange()" style="margin-left: 10px;">
+            <div class="logo-group">
+                <div style="font-size: 1.5rem;">📰</div>
+                <h1>每日新聞 AI 摘要</h1>
+            </div>
+            <!-- Date Selector (Moved to Left) -->
+            <select id="historySelect" onchange="handleDateChange()" style="margin-left: 0;">
                 <option value="">-- 載入中 --</option>
             </select>
-            <!-- Liquidity Badge -->
+            <!-- Liquidity Badge (Moved to Left) -->
             <div id="liquidity-badge" onclick="openChartModal('liquidity')" title="點擊查看 Fed 流動性圖表">
-                Net Liquidity: <span id="liquidity-val">...</span>
+                FED: <span id="liquidity-val">...</span>
             </div>
         </div>
 
         <div class="header-controls">
-            <!-- Source Selector -->
+
+            <!-- Generate Button -->
+            <button id="generateBtn" class="primary-btn" onclick="fetchSummary(true)">
+                <span class="btn-desktop">🚀 更新今日摘要</span>
+                <span class="btn-mobile">更新摘要</span>
+            </button>
+
+            <!-- Source List (Hover) -->
             <div class="source-dropdown">
-                <div class="source-btn">📡 來源篩選 ▼</div>
-                <div class="source-content source-checkboxes">
-                    <label><input type="checkbox" value="anduril" checked> FOX</label>
-                    <label><input type="checkbox" value="blocktempo" checked> 動區</label>
-                    <label><input type="checkbox" value="cnyes" checked> 鉅亨網</label>
+                <div class="source-btn" title="來源篩選 (Hover 查看)">📡</div>
+                <div class="source-content">
+                    <div>FOX (Anduril)</div>
+                    <div>動區 (BlockTempo)</div>
+                    <div>鉅亨網 (Cnyes)</div>
                     <hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
-                    <label><input type="checkbox" value="cnbc" checked> CNBC (World)</label>
-                    <label><input type="checkbox" value="seekingalpha" checked> Seeking Alpha</label>
+                    <div>CNBC</div>
+                    <div>Seeking Alpha</div>
                     <hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
-                    <label><input type="checkbox" value="bbc" checked> BBC</label>
-                    <label><input type="checkbox" value="cnn" checked> CNN</label>
-                    <label><input type="checkbox" value="reuters" checked> Reuters</label>
-                    <label><input type="checkbox" value="nyt" checked> NYT</label>
-                    <label><input type="checkbox" value="techcrunch" checked> TechCrunch</label>
-                    <label><input type="checkbox" value="forbes" checked> Forbes</label>
-                    <label><input type="checkbox" value="axios" checked> Axios</label>
-                    <label><input type="checkbox" value="businessinsider" checked> Business Insider</label>
+                    <div>BBC</div>
+                    <div>CNN</div>
+                    <div>Reuters</div>
+                    <div>NYT</div>
+                    <div>TechCrunch</div>
+                    <div>Forbes</div>
+                    <div>Axios</div>
+                    <div>Business Insider</div>
                 </div>
             </div>
-
-            <!-- Generate Button (Now specifically for Live Update) -->
-            <button id="generateBtn" class="primary-btn" onclick="fetchSummary(true)">🚀 更新今日摘要</button>
         </div>
     </header>
 
@@ -443,9 +497,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 <button class="primary-btn" onclick="switchChart('liquidity')" id="btn-liquidity">Fed 流動性</button>
                 <button class="primary-btn" onclick="switchChart('VIX')" id="btn-VIX">VIX 恐慌指數</button>
                 <button class="primary-btn" onclick="switchChart('M2_COMBO')" id="btn-M2_COMBO">M2 供給 & 年增率</button>
-                <button class="primary-btn" onclick="switchChart('10Y2Y')" id="btn-10Y2Y">10Y-2Y 公債利差</button>
-                <button class="primary-btn" onclick="switchChart('DXY_BROAD')" id="btn-DXY_BROAD">DXY_BROAD</button>
-                <button class="primary-btn" onclick="refreshCurrentChart()" id="btn-refresh-chart" style="margin-left:auto; background:#6c757d;">🔄 更新數據</button>
+                <button class="primary-btn" onclick="switchChart('10Y2Y')" id="btn-10Y2Y">10Y-2Y 美債利差</button>
+                <button class="primary-btn" onclick="switchChart('DXY_BROAD')" id="btn-DXY_BROAD">美元指數(廣義)</button>
+                <button class="primary-btn" onclick="refreshCurrentChart()" id="btn-refresh-chart" style="margin-left:auto; background:#1e9c50;">🔄 更新數據</button>
             </div>
 
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -470,6 +524,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
         <!-- Raw Article List Sidebar -->
         <div id="articleList">
             <h3>📑 原始文章列表</h3>
+            <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 5px;">
+                <label for="articleSourceFilter" style="font-size: 0.9em; color: #666; white-space: nowrap;">篩選來源:</label>
+                <select id="articleSourceFilter" onchange="filterArticleList()" style="width: 100%; padding: 4px 8px; font-size: 0.9em; border-radius: 4px; border: 1px solid #ccc;">
+                    <option value="all">全部來源</option>
+                </select>
+            </div>
             <div id="articleListContent" style="color: #999; font-size: 0.9em;">
                 (尚無資料)
             </div>
@@ -556,17 +616,21 @@ HTML_CONTENT = r"""<!DOCTYPE html>
              btn.innerText = "更新中...";
 
              try {
-                 if (currentChartType === 'liquidity') {
-                     await fetchLiquidity(true);
-                 } else if (currentChartType === 'M2_COMBO') {
-                     await fetchEconomics('M2', true);
-                     await fetchEconomics('M1_YOY', true);
-                     await fetchEconomics('M2_YOY', true);
-                 } else {
-                     await fetchEconomics(currentChartType, true);
-                 }
-                 renderChart(currentChartType);
-                 showToast("數據更新完成", "success");
+                 // 1. 同時觸發後端更新所有數據 (Liquidity & Economics)
+                 const p1 = fetch('/api/liquidity?refresh=true');
+                 const p2 = fetch('/api/economics?refresh=true');
+                 await Promise.all([p1, p2]);
+
+                 // 2. 清除前端快取 (確保切換分頁時會重新抓取 DB 最新資料)
+                 chartDataCache = {};
+
+                 // 3. 更新 Header 流動性數值 (從 DB 抓取)
+                 await fetchLiquidity(false);
+
+                 // 4. 重新載入當前圖表 (從 DB 抓取並渲染)
+                 await switchChart(currentChartType);
+
+                 showToast("所有數據更新完成", "success");
              } catch (e) {
                  showToast("更新失敗: " + e.message, "error");
              } finally {
@@ -579,7 +643,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             currentChartType = type;
 
             // Highlight button
-            document.querySelectorAll('#chartModal .primary-btn').forEach(b => b.style.opacity = '0.6');
+            document.querySelectorAll('#chartModal .primary-btn').forEach(b => {
+                if (b.id !== 'btn-refresh-chart') b.style.opacity = '0.6';
+            });
             const btn = document.getElementById(`btn-${type}`);
             if(btn) btn.style.opacity = '1';
 
@@ -602,12 +668,12 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 if (!chartDataCache['M1_YOY']) await fetchEconomics('M1_YOY');
                 if (!chartDataCache['M2_YOY']) await fetchEconomics('M2_YOY');
             } else if (type === '10Y2Y') {
-                titleEl.innerText = '📉 10年-2年 公債利差';
+                titleEl.innerText = '📉 10年-2年 美債利差';
                 descEl.innerHTML = '經濟衰退指標。負值 (倒掛) 代表衰退風險高。<br>單位: Percent (%)';
                 if (!chartDataCache['10Y2Y']) await fetchEconomics('10Y2Y');
             } else if (type === 'DXY_BROAD') {
-                titleEl.innerText = '🇺🇸 廣義美元指數 (DXY_BROAD)';
-                descEl.innerHTML = '包含 26種 貨幣 (含人民幣、墨西哥披索等)，涵蓋美國主要貿易夥伴。<br>更能真實反映美元在全球貿易中的購買力與競爭力。';
+                titleEl.innerText = '美元指數(廣義) (DXY_BROAD)';
+                descEl.innerHTML = 'DTWEXBGS，包含 26種 貨幣 (含人民幣、墨西哥披索等)，涵蓋美國主要貿易夥伴。<br>更能真實反映美元在全球貿易中的購買力與競爭力。';
                 if (!chartDataCache['DXY_BROAD']) await fetchEconomics('DXY_BROAD');
             }
 
@@ -830,7 +896,10 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         async function loadArticlesList(date) {
             const listContainer = document.getElementById('articleListContent');
+            const filterSelect = document.getElementById('articleSourceFilter');
             listContainer.innerHTML = '<span class="loader"></span> 載入中...';
+            // Reset filter dropdown, keeping the "All" option
+            filterSelect.innerHTML = '<option value="all">全部來源</option>';
 
             try {
                 const targetDate = date || new Date().toISOString().split('T')[0];
@@ -840,34 +909,66 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                     const data = await res.json();
                     if (data.articles && data.articles.length > 0) {
                         let html = '';
+                        const sourcesInList = new Map(); // Use Map to store normalized -> display name
+
                         data.articles.forEach(art => {
                             let sourceColor = '#6c757d';
                             let displaySource = art.source;
 
                             // Map source names for display and color
                             const s = art.source.toLowerCase();
-                            if(s.includes('cnyes')) sourceColor = '#dc3545';
-                            else if(s.includes('blocktempo')) { sourceColor = '#fd7e14'; displaySource = '動區'; }
-                            else if(s.includes('anduril')) { sourceColor = '#0d6efd'; displaySource = 'FOX'; }
-                            else if(s.includes('fox')) { sourceColor = '#0d6efd'; displaySource = 'FOX'; }
-                            else if(s.includes('cnbc')) sourceColor = '#20c997';
-                            else if(s.includes('seekingalpha')) sourceColor = '#ffc107';
-                            else if(s.includes('bbc')) sourceColor = '#b80000';
-                            else if(s.includes('cnn')) sourceColor = '#cc0000';
-                            else if(s.includes('reuters')) sourceColor = '#ff8000';
-                            else if(s.includes('nyt')) sourceColor = '#000000';
-                            else if(s.includes('techcrunch')) sourceColor = '#00a562';
-                            else if(s.includes('forbes')) sourceColor = '#333333';
-                            else if(s.includes('axios')) sourceColor = '#2251ff';
-                            else if(s.includes('businessinsider')) sourceColor = '#1c1c1c';
+                            
+                            if (s.includes('cnyes')) { sourceColor = '#dc3545'; displaySource = '鉅亨網'; }
+                            else if (s.includes('blocktempo')) { sourceColor = '#fd7e14'; displaySource = '動區'; }
+                            else if (s.includes('anduril')) { sourceColor = '#0d6efd'; displaySource = 'FOX'; }
+                            else if (s.includes('fox')) { sourceColor = '#0d6efd'; displaySource = 'FOX'; }
+                            else if (s.includes('cnbc')) { sourceColor = '#20c997'; displaySource = 'CNBC'; }
+                            else if (s.includes('seekingalpha')) { sourceColor = '#ffc107'; displaySource = 'Seeking Alpha'; }
+                            else if (s.includes('bbc')) { sourceColor = '#b80000'; displaySource = 'BBC'; }
+                            else if (s.includes('cnn')) { sourceColor = '#cc0000'; displaySource = 'CNN'; }
+                            else if (s.includes('reuters')) { sourceColor = '#ff8000'; displaySource = 'Reuters'; }
+                            else if (s.includes('nyt')) { sourceColor = '#000000'; displaySource = 'NYT'; }
+                            else if (s.includes('techcrunch')) { sourceColor = '#00a562'; displaySource = 'TechCrunch'; }
+                            else if (s.includes('forbes')) { sourceColor = '#333333'; displaySource = 'Forbes'; }
+                            else if (s.includes('axios')) { sourceColor = '#2251ff'; displaySource = 'Axios'; }
+                            else if (s.includes('businessinsider')) { sourceColor = '#1c1c1c'; displaySource = 'Business Insider'; }
+
+                            if (!sourcesInList.has(s)) {
+                                sourcesInList.set(s, displaySource);
+                            }
 
                             html += `
-                            <div class="article-item">
+                            <div class="article-item" data-source="${s}">
                                 <span class="article-source" style="background:${sourceColor}">${displaySource}</span>
                                 <a href="${art.url}" class="article-link" target="_blank">${art.title}</a>
                             </div>`;
                         });
                         listContainer.innerHTML = html;
+
+                        // Populate filter dropdown with unique sources
+                        // Custom Sort Order
+                        const customOrder = ["FOX", "動區", "鉅亨網", "Axios", "BBC", "CNBC", "NYT", "Reuters", "Seeking Alpha", "TechCrunch"];
+                        
+                        const sortedSources = Array.from(sourcesInList.entries()).sort((a, b) => {
+                            const nameA = a[1];
+                            const nameB = b[1];
+                            const idxA = customOrder.indexOf(nameA);
+                            const idxB = customOrder.indexOf(nameB);
+                            
+                            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                            if (idxA !== -1) return -1;
+                            if (idxB !== -1) return 1;
+                            
+                            return nameA.localeCompare(nameB, 'zh-TW');
+                        });
+
+                        sortedSources.forEach(([normalizedSource, displayText]) => {
+                            const opt = document.createElement('option');
+                            opt.value = normalizedSource;
+                            opt.text = displayText;
+                            filterSelect.appendChild(opt);
+                        });
+
                     } else {
                         listContainer.innerHTML = '此日期尚無已存檔的文章。';
                     }
@@ -937,6 +1038,20 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             return markdown;
         }
 
+        function filterArticleList() {
+            const selectedSource = document.getElementById('articleSourceFilter').value;
+            const articles = document.querySelectorAll('#articleListContent .article-item');
+
+            articles.forEach(article => {
+                const articleSource = article.getAttribute('data-source');
+                if (selectedSource === 'all' || articleSource === selectedSource) {
+                    article.style.display = 'flex';
+                } else {
+                    article.style.display = 'none';
+                }
+            });
+        }
+
         async function fetchSummary(forceLive = false) {
             const btn = document.getElementById('generateBtn');
             const statusText = document.getElementById('status-text');
@@ -949,22 +1064,32 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 historyDate = "";
                 document.querySelectorAll('input[type=checkbox]').forEach(el => el.disabled = false);
                 document.getElementById('generateBtn').style.display = 'inline-block';
+
+                // Lock UI and wait for economic data update
+                btn.disabled = true;
+                content.style.opacity = '0.5';
+                updateProgress(0, "正在同步最新經濟數據...");
+
+                try {
+                    await Promise.all([
+                        fetch('/api/liquidity?refresh=true'),
+                        fetch('/api/economics?refresh=true')
+                    ]);
+                    chartDataCache = {};
+                    fetchLiquidity(false);
+                } catch (e) { console.error("Economic update failed", e); }
             }
 
-            const checkboxes = document.querySelectorAll('.source-checkboxes input:checked');
-            const sources = Array.from(checkboxes).map(cb => cb.value).join(',');
-
-            if (!historyDate && sources.length === 0) {
-                showToast("請至少選擇一個新聞來源！", "error");
-                return;
-            }
+            // Default to all sources (empty string tells backend to use all)
+            const sources = '';
 
             btn.disabled = true;
             content.style.opacity = '0.5';
 
             // Initial Status
             if (forceLive) {
-                updateProgress(0, "準備開始...");
+                // Already showing progress, just update text
+                updateProgress(0, "準備開始爬取新聞...");
             } else {
                 statusText.innerHTML = `<span class="loader"></span> 正在讀取摘要...`;
             }

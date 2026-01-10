@@ -10,7 +10,7 @@ class FredClient:
         self.base_url = "https://api.stlouisfed.org/fred/series/observations"
         self.db_client = db_client
 
-    async def fetch_series(self, series_id: str, start_date: str = "2014-01-01") -> List[Dict[str, Any]]:
+    async def fetch_series(self, series_id: str, start_date: str = "2025-12-01") -> List[Dict[str, Any]]:
         """
         Fetch series data from FRED API.
         Returns a list of dicts: {'date': 'YYYY-MM-DD', 'value': float}
@@ -171,7 +171,7 @@ class FredClient:
         for ind in indicators:
             print(f"Fetching {ind['symbol']} ({ind['id']})...")
             # Fetch last 5 years to be safe, or just 2014 like liquidity
-            data = await self.fetch_series(ind['id'], start_date="2020-01-01")
+            data = await self.fetch_series(ind['id'], start_date="2014-01-01")
 
             if data:
                 # Transform for DB: {date, symbol, value}

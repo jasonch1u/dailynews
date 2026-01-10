@@ -5,6 +5,8 @@ import time
 import os
 from datetime import datetime, timezone, timedelta
 from api.llm_utils import translate_text
+import warnings
+from bs4 import XMLParsedAsHTMLWarning
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -123,10 +125,14 @@ async def fetch_rss_feed(session, db, url, source_name, translate=False, allow_e
             try:
                 soup = BeautifulSoup(xml, 'xml')
             except Exception:
-                soup = BeautifulSoup(xml, 'html.parser')
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+                    soup = BeautifulSoup(xml, 'html.parser')
 
             if not soup.find('item'):
-                soup = BeautifulSoup(xml, 'html.parser')
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+                    soup = BeautifulSoup(xml, 'html.parser')
 
             items = soup.find_all('item')
             for item in items[:10]: # Top 10
@@ -242,7 +248,9 @@ async def fetch_cnyes_stock(session, db=None):
             try:
                 soup = BeautifulSoup(xml, 'xml')
             except:
-                soup = BeautifulSoup(xml, 'html.parser')
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+                    soup = BeautifulSoup(xml, 'html.parser')
 
             items = soup.find_all('item')
             for item in items[:10]: # Top 10 latest
