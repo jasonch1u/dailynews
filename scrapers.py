@@ -145,8 +145,11 @@ async def fetch_rss_feed(session, db, url, source_name, translate=False, allow_e
                 if pub_date_str:
                     # RSS Date Format: "Tue, 06 Jan 2026 22:00:03 +0800" or similar
                     try:
+                        # Handle GMT/UTC manually since %z sometimes fails with named zones
+                        pd_str = pub_date_str.replace("GMT", "+0000").replace("UTC", "+0000")
+
                         # Try parsing common RSS formats
-                        pd = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %z")
+                        pd = datetime.strptime(pd_str, "%a, %d %b %Y %H:%M:%S %z")
                         # Convert to TW time
                         pd_tw = pd.astimezone(TZ_TW)
                         if pd_tw.date() != get_tw_now().date():
@@ -288,16 +291,22 @@ async def fetch_bbc(session, db=None):
     return await fetch_rss_feed(session, db, "http://feeds.bbci.co.uk/news/rss.xml", "BBC", translate=True)
 
 async def fetch_cnn(session, db=None):
-    return await fetch_rss_feed(session, db, "http://rss.cnn.com/rss/edition.rss", "CNN", translate=True)
+    # Using Google News RSS Proxy to avoid outdated direct feeds
+    url = "https://news.google.com/rss/search?q=site:cnn.com+when:1d&hl=en-US&gl=US&ceid=US:en"
+    return await fetch_rss_feed(session, db, url, "CNN", translate=True)
 
 async def fetch_techcrunch(session, db=None):
     return await fetch_rss_feed(session, db, "https://techcrunch.com/feed/", "TechCrunch", translate=True)
 
 async def fetch_forbes(session, db=None):
-    return await fetch_rss_feed(session, db, "https://www.forbes.com/most-popular/feed/", "Forbes", translate=True)
+    # Using Google News RSS Proxy to bypass blocks
+    url = "https://news.google.com/rss/search?q=site:forbes.com+when:1d&hl=en-US&gl=US&ceid=US:en"
+    return await fetch_rss_feed(session, db, url, "Forbes", translate=True)
 
 async def fetch_business_insider(session, db=None):
-    return await fetch_rss_feed(session, db, "https://feeds.businessinsider.com/custom/all", "BusinessInsider", translate=True)
+    # Using Google News RSS Proxy to bypass empty feed issues
+    url = "https://news.google.com/rss/search?q=site:businessinsider.com+when:1d&hl=en-US&gl=US&ceid=US:en"
+    return await fetch_rss_feed(session, db, url, "BusinessInsider", translate=True)
 
 async def fetch_axios(session, db=None):
     return await fetch_rss_feed(session, db, "https://api.axios.com/feed/", "Axios", translate=True)
