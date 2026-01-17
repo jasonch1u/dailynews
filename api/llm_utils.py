@@ -65,7 +65,7 @@ async def generate_daily_summary(articles_text: str, api_key: str):
 
     ---
 
-    **關鍵結論 (Key Takeaways)**：
+    ## 💡 關鍵結論 (Key Takeaways)
     *   (列出 3 點最重要的市場洞察，每點約 20-30 字)
 
     ---
