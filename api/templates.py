@@ -641,6 +641,8 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         async function switchChart(type) {
             currentChartType = type;
+            const container = document.getElementById('chart-container');
+            const LOADING_HTML = '<div style="display:flex; justify-content:center; align-items:center; height:100%; color:#666;"><span class="loader"></span> 載入數據中...</div>';
 
             // Highlight button
             document.querySelectorAll('#chartModal .primary-btn').forEach(b => {
@@ -656,25 +658,40 @@ HTML_CONTENT = r"""<!DOCTYPE html>
             if (type === 'liquidity') {
                 titleEl.innerText = '🏦 Fed Net Liquidity 趨勢圖';
                 descEl.innerHTML = 'Net Liquidity = Fed Assets - TGA - RRP (每週三更新)<br>單位: Trillion USD (兆美元)';
-                if (!chartDataCache['liquidity']) await fetchLiquidity(false);
+                if (!chartDataCache['liquidity']) {
+                    container.innerHTML = LOADING_HTML;
+                    await fetchLiquidity(false);
+                }
             } else if (type === 'VIX') {
                 titleEl.innerText = '😰 VIX 恐慌指數';
                 descEl.innerHTML = '衡量市場對未來30天波動性的預期。<br>數值越高代表市場越恐慌 (通常 >20 表示警戒)。';
-                if (!chartDataCache['VIX']) await fetchEconomics('VIX');
+                if (!chartDataCache['VIX']) {
+                    container.innerHTML = LOADING_HTML;
+                    await fetchEconomics('VIX');
+                }
             } else if (type === 'M2_COMBO') {
                 titleEl.innerText = '💵 M2 供給 & ✂️ 年增率 (M1/M2)';
                 descEl.innerHTML = '左軸: <span style="color:#20c997">■ M2 供給</span> (十億美元) | 右軸: <span style="color:#0d6efd">■ M1 YoY</span> vs <span style="color:#fd7e14">■ M2 YoY</span> (%)<br>2021/5/10 後數據 (避免 2020 數據失真)';
+                if (!chartDataCache['M2'] || !chartDataCache['M1_YOY'] || !chartDataCache['M2_YOY']) {
+                    container.innerHTML = LOADING_HTML;
+                }
                 if (!chartDataCache['M2']) await fetchEconomics('M2');
                 if (!chartDataCache['M1_YOY']) await fetchEconomics('M1_YOY');
                 if (!chartDataCache['M2_YOY']) await fetchEconomics('M2_YOY');
             } else if (type === '10Y2Y') {
                 titleEl.innerText = '📉 10年-2年 美債利差';
                 descEl.innerHTML = '經濟衰退指標。負值 (倒掛) 代表衰退風險高。<br>單位: Percent (%)';
-                if (!chartDataCache['10Y2Y']) await fetchEconomics('10Y2Y');
+                if (!chartDataCache['10Y2Y']) {
+                    container.innerHTML = LOADING_HTML;
+                    await fetchEconomics('10Y2Y');
+                }
             } else if (type === 'DXY_BROAD') {
                 titleEl.innerText = '美元指數(廣義) (DXY_BROAD)';
                 descEl.innerHTML = 'DTWEXBGS，包含 26種 貨幣 (含人民幣、墨西哥披索等)，涵蓋美國主要貿易夥伴。<br>更能真實反映美元在全球貿易中的購買力與競爭力。';
-                if (!chartDataCache['DXY_BROAD']) await fetchEconomics('DXY_BROAD');
+                if (!chartDataCache['DXY_BROAD']) {
+                    container.innerHTML = LOADING_HTML;
+                    await fetchEconomics('DXY_BROAD');
+                }
             }
 
             renderChart(type);
@@ -734,6 +751,15 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
         function renderChart(type) {
              const container = document.getElementById('chart-container');
+
+             // Clean up previous chart instance
+             if (chart) {
+                 try {
+                     chart.remove();
+                 } catch(e) { console.warn(e); }
+                 chart = null;
+             }
+
              container.innerHTML = '';
 
              try {
