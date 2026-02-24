@@ -13,6 +13,14 @@
     {
       "path": "/api/summarize?refresh=true",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/macro-signal/refresh",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/macro-signal/refresh",
+      "schedule": "0 22 * * *"
     }
   ]
 }

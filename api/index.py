@@ -13,6 +13,7 @@ from scrapers import run_all_scrapers
 from api.templates import HTML_CONTENT
 from api.db import SupabaseClient
 from api.fred_utils import FredClient
+from api.macro_utils import build_macro_snapshot
 
 # Load environment variables
 load_dotenv()
@@ -269,6 +270,107 @@ async def summarize_news_endpoint(
             yield f"data: {json.dumps({'error': '系統發生錯誤', 'details': str(e)})}\n\n"
 
     return StreamingResponse(summary_generator(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
+
+@app.get("/api/macro-signal")
+async def get_macro_signal(refresh: bool = False):
+    """
+    Get current macro signal for crypto contract trading (XinGPT Skill 4).
+    Used by PolyArb market_monitor as Layer 1 macro filter.
+
+    Query params:
+        refresh: bool — if True, fetch fresh data from all sources
+
+    Returns:
+        {
+          "date": "2026-02-24",
+          "score": -30,
+          "stance": "BEARISH",
+          "crypto_action": "禁止多頭，可做空",
+          "triggers": [...],
+          "data": { sofr, tga_billion, vix, usdjpy, us10y, net_liq_billion, ... },
+          "source": "cached" | "fresh"
+        }
+    """
+    # Try cache first (unless forced refresh)
+    if not refresh:
+        cached = await db.get_latest_macro_snapshot()
+        if cached:
+            from datetime import date as _date
+            today_str = _date.today().isoformat()
+            if cached.get("date") == today_str:
+                cached["source"] = "cached"
+                return cached
+
+    # Fetch latest WALCL and RRP from existing DB (market_liquidity table)
+    liq_history = await db.get_market_liquidity()
+    walcl_billion = None
+    rrp_billion = None
+    net_liq_prev_week = None
+
+    if liq_history:
+        # Latest entry (sorted desc)
+        latest_liq = liq_history[0]
+        # market_liquidity stores values — check existing field names
+        # WALCL is typically in billions already in FRED; RRP same
+        walcl_val = latest_liq.get("walcl")
+        rrp_val = latest_liq.get("rrp")
+        # FRED WALCL is in billions (fred_utils divides by 1000)
+        walcl_billion = float(walcl_val) if walcl_val else None
+        rrp_billion = float(rrp_val) if rrp_val else None
+
+        # Weekly net_liq for change calculation (7 days ago)
+        if len(liq_history) >= 7:
+            week_ago = liq_history[6]
+            prev_nl = week_ago.get("net_liquidity")
+            net_liq_prev_week = float(prev_nl) if prev_nl else None
+
+    # Build fresh snapshot (calls NY Fed, Fiscal Data, Yahoo Finance)
+    snapshot = build_macro_snapshot(
+        walcl_billion=walcl_billion,
+        rrp_billion=rrp_billion,
+    )
+
+    # Inject historical weekly change if we have it
+    if net_liq_prev_week is not None and snapshot.get("net_liq_billion") is not None:
+        change_pct = (
+            (snapshot["net_liq_billion"] - net_liq_prev_week) / abs(net_liq_prev_week) * 100
+        )
+        snapshot["net_liq_weekly_change_pct"] = round(change_pct, 2)
+
+        # Re-compute signal with historical context
+        from api.macro_utils import compute_macro_signal, get_yahoo_price_history
+        usdjpy_history = get_yahoo_price_history("USDJPY=X", days=10)
+        usdjpy_prev_week = usdjpy_history[-8] if len(usdjpy_history) >= 8 else None
+
+        signal = compute_macro_signal(
+            net_liq=snapshot["net_liq_billion"],
+            net_liq_prev_week=net_liq_prev_week,
+            sofr=snapshot.get("sofr"),
+            vix=snapshot.get("vix"),
+            usdjpy=snapshot.get("usdjpy"),
+            usdjpy_prev_week=usdjpy_prev_week,
+        )
+        snapshot.update({
+            "macro_score": signal["score"],
+            "macro_stance": signal["stance"],
+            "crypto_action": signal["crypto_action"],
+            "triggers": signal["triggers"],
+        })
+
+    # Save to DB
+    await db.save_macro_snapshot(snapshot)
+
+    snapshot["source"] = "fresh"
+    return snapshot
+
+
+@app.get("/api/macro-signal/refresh")
+@app.post("/api/macro-signal/refresh")
+async def refresh_macro_signal():
+    """Force refresh macro signal (called by Vercel cron — must be GET)."""
+    result = await get_macro_signal(refresh=True)
+    return {"status": "ok", "stance": result.get("macro_stance"), "score": result.get("macro_score")}
+
 
 @app.get("/")
 @app.get("")
