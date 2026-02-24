@@ -269,3 +269,66 @@ class SupabaseClient:
 
         # Otherwise fetch all history
         return await self._fetch_all_pages(url, params)
+
+    # --- Macro Snapshots (XinGPT Skill 4) ---
+
+    async def save_macro_snapshot(self, snapshot: dict) -> bool:
+        """
+        Upsert daily macro snapshot.
+        snapshot must have 'date' as primary key.
+        """
+        if not self.is_configured:
+            return False
+        url = f"{self.base_url}/rest/v1/macro_snapshots"
+        headers = self.headers.copy()
+        headers["Prefer"] = "resolution=merge-duplicates"
+
+        import json as _json
+        payload = snapshot.copy()
+        # Supabase expects JSONB fields as actual JSON strings or dicts
+        for field in ("triggers", "raw_data"):
+            if field in payload and not isinstance(payload[field], str):
+                payload[field] = payload[field]  # keep as dict, supabase handles it
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as resp:
+                    return resp.status in (200, 201, 204)
+        except Exception as e:
+            print(f"Error saving macro snapshot: {e}")
+            return False
+
+    async def get_latest_macro_snapshot(self) -> dict | None:
+        """Get the most recent macro snapshot."""
+        if not self.is_configured:
+            return None
+        url = f"{self.base_url}/rest/v1/macro_snapshots"
+        params = {"select": "*", "order": "date.desc", "limit": "1"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=self.headers, params=params) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return data[0] if data else None
+        except Exception as e:
+            print(f"Error fetching latest macro snapshot: {e}")
+        return None
+
+    async def get_macro_snapshot_history(self, days: int = 30) -> list:
+        """Get macro snapshot history for weekly change calculation."""
+        if not self.is_configured:
+            return []
+        url = f"{self.base_url}/rest/v1/macro_snapshots"
+        params = {
+            "select": "date,net_liq_billion,macro_score,macro_stance,usdjpy",
+            "order": "date.desc",
+            "limit": str(days),
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=self.headers, params=params) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+        except Exception as e:
+            print(f"Error fetching macro snapshot history: {e}")
+        return []

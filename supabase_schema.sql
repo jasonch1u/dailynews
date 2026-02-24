@@ -54,3 +54,29 @@ create table if not exists economic_indicators (
 );
 
 alter table economic_indicators enable row level security;
+
+-- Create table for macro snapshots (XinGPT Skill 4: Macro Liquidity Monitor)
+-- Sources: NY Fed SOFR, Fiscal Data TGA, Yahoo Finance (VIX/USDJPY/US10Y)
+-- Used by PolyArb as Layer 1 macro filter for crypto contract trading
+create table if not exists macro_snapshots (
+  date date primary key,
+  sofr numeric,                        -- SOFR overnight rate (%)
+  tga_billion numeric,                 -- Treasury General Account ($B, Fiscal Data API, daily)
+  vix numeric,                         -- VIX index (Yahoo Finance, intraday)
+  usdjpy numeric,                      -- USD/JPY rate (Yahoo Finance)
+  us10y numeric,                       -- US 10-Year yield % (Yahoo Finance)
+  net_liq_billion numeric,             -- Fed Assets - TGA - RRP ($B)
+  net_liq_weekly_change_pct numeric,   -- Week-over-week % change
+  macro_score integer,                 -- Signal score: -100 (bearish) to +100 (bullish)
+  macro_stance text,                   -- BEARISH / CAUTIOUS / NEUTRAL / BULLISH
+  crypto_action text,                  -- Plain-language trading guidance
+  triggers jsonb,                      -- List of triggered conditions with details
+  raw_data jsonb,                      -- Raw API responses for debugging
+  created_at timestamptz default now()
+);
+
+alter table macro_snapshots enable row level security;
+
+create policy "Allow read for all" on macro_snapshots for select using (true);
+create policy "Allow insert for service role" on macro_snapshots for insert with check (true);
+create policy "Allow update for service role" on macro_snapshots for update using (true);
