@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import aiohttp
 import os
 import json
+from typing import Dict, List, Optional
 
 class SupabaseClient:
     def __init__(self):
@@ -272,7 +275,7 @@ class SupabaseClient:
 
     # --- Macro Snapshots (XinGPT Skill 4) ---
 
-    async def save_macro_snapshot(self, snapshot: dict) -> bool:
+    async def save_macro_snapshot(self, snapshot: Dict) -> bool:
         """
         Upsert daily macro snapshot.
         snapshot must have 'date' as primary key.
@@ -298,7 +301,7 @@ class SupabaseClient:
             print(f"Error saving macro snapshot: {e}")
             return False
 
-    async def get_latest_macro_snapshot(self) -> dict | None:
+    async def get_latest_macro_snapshot(self) -> Optional[Dict]:
         """Get the most recent macro snapshot."""
         if not self.is_configured:
             return None
@@ -314,7 +317,7 @@ class SupabaseClient:
             print(f"Error fetching latest macro snapshot: {e}")
         return None
 
-    async def get_macro_snapshot_history(self, days: int = 30) -> list:
+    async def get_macro_snapshot_history(self, days: int = 30) -> List:
         """Get macro snapshot history for weekly change calculation."""
         if not self.is_configured:
             return []

@@ -13,9 +13,12 @@ api/macro_utils.py
 - 觸發：週降 > 5% / SOFR > 5.5% / VIX > 25 + USDJPY 急升
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from datetime import date, datetime, timedelta, timezone
+from typing import Dict, List, Optional
 
 import requests
 
@@ -41,7 +44,7 @@ def _get(url: str, params: dict = None, timeout: int = 10) -> dict | None:
 # ─── Data Sources ─────────────────────────────────────────────────────────────
 
 
-def get_sofr() -> dict | None:
+def get_sofr() -> Optional[Dict]:
     """
     SOFR from NY Fed API.
     Updates: next business day after market close (~08:00 ET).
@@ -59,7 +62,7 @@ def get_sofr() -> dict | None:
         return None
 
 
-def get_tga_daily() -> dict | None:
+def get_tga_daily() -> Optional[Dict]:
     """
     Treasury General Account daily balance from Fiscal Data API.
     Faster than FRED WDTGAL (D+1 vs D+5).
@@ -93,7 +96,7 @@ def get_tga_daily() -> dict | None:
         return None
 
 
-def get_yahoo_price(symbol: str) -> float | None:
+def get_yahoo_price(symbol: str) -> Optional[float]:
     """
     Fetch latest price from Yahoo Finance (no API key needed).
     Symbols: ^VIX, USDJPY=X, ^TNX (US 10Y), ^IRX (US 3M), ^MOVE
@@ -113,7 +116,7 @@ def get_yahoo_price(symbol: str) -> float | None:
         return None
 
 
-def get_yahoo_price_history(symbol: str, days: int = 10) -> list[float]:
+def get_yahoo_price_history(symbol: str, days: int = 10) -> List[float]:
     """
     Get price history for weekly change calculation.
     Returns list of closes (ascending date).
@@ -135,13 +138,13 @@ def get_yahoo_price_history(symbol: str, days: int = 10) -> list[float]:
 
 
 def compute_macro_signal(
-    net_liq: float | None,
-    net_liq_prev_week: float | None,
-    sofr: float | None,
-    vix: float | None,
-    usdjpy: float | None,
-    usdjpy_prev_week: float | None,
-) -> dict:
+    net_liq: Optional[float],
+    net_liq_prev_week: Optional[float],
+    sofr: Optional[float],
+    vix: Optional[float],
+    usdjpy: Optional[float],
+    usdjpy_prev_week: Optional[float],
+) -> Dict:
     """
     XinGPT-style macro signal for crypto contract trading.
 
@@ -276,7 +279,7 @@ def compute_macro_signal(
 # ─── Full Snapshot Builder ────────────────────────────────────────────────────
 
 
-def build_macro_snapshot(walcl_billion: float | None, rrp_billion: float | None) -> dict:
+def build_macro_snapshot(walcl_billion: Optional[float], rrp_billion: Optional[float]) -> Dict:
     """
     Fetch all fast data sources and compute a full macro snapshot.
 
