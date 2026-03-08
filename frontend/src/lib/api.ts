@@ -5,7 +5,7 @@
 import { MOCK_MACRO_SIGNAL, MOCK_SUMMARY, MOCK_DATES } from './mockData';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === 'true' || (!API_BASE && typeof window !== 'undefined');
+const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
 
 export interface MacroSignal {
   date: string;
