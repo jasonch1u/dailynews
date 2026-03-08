@@ -7,32 +7,44 @@ interface NewsFeedProps {
   activeCategory: string;
 }
 
-// Source color mapping
-const SOURCE_COLORS: Record<string, string> = {
-  'cnyes': '#dc3545',
-  '鉅亨': '#dc3545',
-  'blocktempo': '#fd7e14',
-  '動區': '#fd7e14',
-  'fox': '#0d6efd',
-  'anduril': '#0d6efd',
-  'cnbc': '#20c997',
-  'seekingalpha': '#ffc107',
-  'bbc': '#b80000',
-  'cnn': '#cc0000',
-  'techcrunch': '#00a562',
-  'forbes': '#666',
-  'businessinsider': '#444',
-  'axios': '#2251ff',
-  'nyt': '#999',
-  'reuters': '#ff8000',
+// Source metadata with colors, reliability, and favicon
+const SOURCE_META: Record<string, { color: string; reliability: number; icon: string; label: string }> = {
+  'cnyes':          { color: '#dc3545', reliability: 4, icon: '🔴', label: 'Cnyes 鉅亨' },
+  '鉅亨':          { color: '#dc3545', reliability: 4, icon: '🔴', label: 'Cnyes 鉅亨' },
+  'blocktempo':    { color: '#fd7e14', reliability: 4, icon: '🟠', label: '動區 BlockTempo' },
+  '動區':          { color: '#fd7e14', reliability: 4, icon: '🟠', label: '動區 BlockTempo' },
+  'fox':           { color: '#0d6efd', reliability: 3, icon: '📺', label: 'FOX/Anduril' },
+  'anduril':       { color: '#0d6efd', reliability: 3, icon: '📺', label: 'FOX/Anduril' },
+  'cnbc':          { color: '#20c997', reliability: 5, icon: '💹', label: 'CNBC' },
+  'seekingalpha':  { color: '#ffc107', reliability: 4, icon: '📊', label: 'SeekingAlpha' },
+  'bbc':           { color: '#b80000', reliability: 5, icon: '🇬🇧', label: 'BBC' },
+  'cnn':           { color: '#cc0000', reliability: 4, icon: '📡', label: 'CNN' },
+  'techcrunch':    { color: '#00a562', reliability: 4, icon: '💻', label: 'TechCrunch' },
+  'forbes':        { color: '#666666', reliability: 4, icon: '💼', label: 'Forbes' },
+  'businessinsider': { color: '#444444', reliability: 3, icon: '📰', label: 'Business Insider' },
+  'axios':         { color: '#2251ff', reliability: 4, icon: '⚡', label: 'Axios' },
+  'nyt':           { color: '#999999', reliability: 5, icon: '🗽', label: 'NYT' },
+  'reuters':       { color: '#ff8000', reliability: 5, icon: '🌐', label: 'Reuters' },
+  'bloomberg':     { color: '#1a1a2e', reliability: 5, icon: '🏦', label: 'Bloomberg' },
+  'ft':            { color: '#f2c7a7', reliability: 5, icon: '📜', label: 'Financial Times' },
+  'wsj':           { color: '#444444', reliability: 5, icon: '📰', label: 'WSJ' },
+  'coindesk':      { color: '#2962ff', reliability: 4, icon: '₿', label: 'CoinDesk' },
+  'theblock':      { color: '#000000', reliability: 4, icon: '⬛', label: 'The Block' },
 };
 
-function getSourceColor(source: string): string {
+function getSourceMeta(source: string): { color: string; reliability: number; icon: string; label: string } {
   const lower = source.toLowerCase();
-  for (const [key, color] of Object.entries(SOURCE_COLORS)) {
-    if (lower.includes(key)) return color;
+  for (const [key, meta] of Object.entries(SOURCE_META)) {
+    if (lower.includes(key)) return meta;
   }
-  return '#6c757d';
+  return { color: '#6c757d', reliability: 3, icon: '📄', label: source };
+}
+
+function reliabilityLabel(score: number): { text: string; color: string } {
+  if (score >= 5) return { text: '★★★', color: '#ffd700' };
+  if (score >= 4) return { text: '★★', color: '#ffc107' };
+  if (score >= 3) return { text: '★', color: '#888' };
+  return { text: '—', color: '#555' };
 }
 
 // Categorize topics based on keywords
@@ -41,9 +53,9 @@ function categorize(text: string): string[] {
   const lower = text.toLowerCase();
 
   if (/crypto|bitcoin|btc|eth|加密|幣|defi|nft|blockchain|區塊鏈|穩定幣|usdc|usdt/.test(lower)) cats.push('crypto');
-  if (/fed|inflation|gdp|利率|央行|cpi|sofr|treasury|fiscal|宏觀|macro|tariff|關稅|trade war/.test(lower)) cats.push('macro');
-  if (/ai |artificial intelligence|openai|gemini|claude|nvidia|chip|半導體|gpu|llm|robot/.test(lower)) cats.push('tech');
-  if (/geopolit|war|military|missile|sanction|制裁|戰爭|衝突|iran|ukraine|china|taiwan/.test(lower)) cats.push('geo');
+  if (/fed|inflation|gdp|利率|央行|cpi|sofr|treasury|fiscal|宏觀|macro|tariff|關稅|trade war|油價|原油|oil/.test(lower)) cats.push('macro');
+  if (/ai |artificial intelligence|openai|gemini|claude|nvidia|chip|半導體|gpu|llm|robot|台積電/.test(lower)) cats.push('tech');
+  if (/geopolit|war|military|missile|sanction|制裁|戰爭|衝突|iran|ukraine|china|taiwan|中東|荷姆茲/.test(lower)) cats.push('geo');
 
   return cats.length > 0 ? cats : ['general'];
 }
@@ -60,7 +72,6 @@ interface ParsedTopic {
 function parseTopics(markdown: string): ParsedTopic[] {
   const topics: ParsedTopic[] = [];
 
-  // Match ### numbered topics
   const topicRegex = /### \d+\.\s*(?:\[([^\]]+)\]\s*)?(.+?)(?:\n)([\s\S]*?)(?=\n### \d+\.|\n## |$)/g;
   let match;
   let index = 0;
@@ -70,11 +81,9 @@ function parseTopics(markdown: string): ParsedTopic[] {
     const title = match[2].trim();
     const body = match[3];
 
-    // Extract sentiment
-    const sentimentMatch = body.match(/\*\*情緒\*\*[：:]\s*\(?([\w/]+)\)?/);
-    const sentiment = sentimentMatch ? sentimentMatch[1] : '';
+    const sentimentMatch = body.match(/\*\*情緒\*\*[：:]\s*\(?([\w/（）\s]+)\)?/);
+    const sentiment = sentimentMatch ? sentimentMatch[1].trim() : '';
 
-    // Extract sources with links
     const sources: Array<{ name: string; title: string; url: string }> = [];
     const linkRegex = /[-*]\s*\[([^\]]+)\]\s*\[([^\]]+)\]\(([^)]+)\)/g;
     let linkMatch;
@@ -82,13 +91,11 @@ function parseTopics(markdown: string): ParsedTopic[] {
       sources.push({ name: linkMatch[1], title: linkMatch[2], url: linkMatch[3] });
     }
 
-    // Clean content (remove source links and sentiment line)
     let content = body
       .replace(/\*\*情緒\*\*[：:].*\n?/g, '')
       .replace(/\*\*相關報導\*\*[\s\S]*?(?=\n\n|\n###|$)/g, '')
       .trim();
 
-    // Remove leading empty lines
     content = content.split('\n').filter(l => l.trim()).join('\n');
 
     const categories = categorize(cat + ' ' + title + ' ' + content);
@@ -123,6 +130,23 @@ function SentimentBadge({ sentiment }: { sentiment: string }) {
   );
 }
 
+function SourceBadge({ source }: { source: { name: string; title: string; url: string } }) {
+  const meta = getSourceMeta(source.name);
+  const rel = reliabilityLabel(meta.reliability);
+
+  return (
+    <a href={source.url} target="_blank" rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded no-underline transition-all hover:brightness-125 group"
+      style={{ background: meta.color, color: '#fff' }}
+      title={`${meta.label} — Reliability: ${rel.text}\n${source.title}`}
+    >
+      <span>{meta.icon}</span>
+      <span>{source.name}</span>
+      <span style={{ color: rel.color, fontSize: '8px' }}>{rel.text}</span>
+    </a>
+  );
+}
+
 function TopicCard({ topic }: { topic: ParsedTopic }) {
   const catColor = topic.category === 'crypto' ? 'var(--accent-orange)'
     : topic.category === 'macro' ? 'var(--accent-cyan)'
@@ -130,41 +154,44 @@ function TopicCard({ topic }: { topic: ParsedTopic }) {
     : topic.category === 'geo' ? 'var(--accent-red)'
     : 'var(--text-muted)';
 
+  const catIcon = topic.category === 'crypto' ? '₿'
+    : topic.category === 'macro' ? '🏦'
+    : topic.category === 'tech' ? '🤖'
+    : topic.category === 'geo' ? '⚔️'
+    : '📰';
+
   return (
     <div className="rounded-lg p-4 card-hover" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
+          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded inline-flex items-center gap-1"
             style={{ color: catColor, background: `${catColor}15`, border: `1px solid ${catColor}30` }}>
+            <span>{catIcon}</span>
             {topic.category}
           </span>
           <SentimentBadge sentiment={topic.sentiment} />
         </div>
-        <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>
+        <span className="text-[10px] shrink-0 font-mono" style={{ color: 'var(--text-muted)' }}>
           #{topic.rawIndex + 1}
         </span>
       </div>
 
       {/* Title */}
-      <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+      <h3 className="text-sm font-semibold mb-2 leading-snug" style={{ color: 'var(--text-primary)' }}>
         {topic.title.replace(/^\[\w+\]\s*/, '')}
       </h3>
 
       {/* Content */}
       <p className="text-xs leading-relaxed mb-3" style={{ color: 'var(--text-secondary)' }}>
-        {topic.content.slice(0, 300)}{topic.content.length > 300 ? '...' : ''}
+        {topic.content.slice(0, 400)}{topic.content.length > 400 ? '...' : ''}
       </p>
 
-      {/* Sources */}
+      {/* Sources with favicons + reliability */}
       {topic.sources.length > 0 && (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1.5">
           {topic.sources.map((s, i) => (
-            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
-              className="text-[10px] px-1.5 py-0.5 rounded no-underline transition-opacity hover:opacity-80"
-              style={{ background: getSourceColor(s.name), color: '#fff' }}>
-              {s.name}
-            </a>
+            <SourceBadge key={i} source={s} />
           ))}
         </div>
       )}
@@ -209,7 +236,6 @@ export default function NewsFeed({ markdown, activeCategory }: NewsFeedProps) {
     return topics.filter(t => t.category === activeCategory);
   }, [topics, activeCategory]);
 
-  // Extract "Other News" section
   const otherNews = useMemo(() => {
     if (!markdown) return '';
     const otherMatch = markdown.match(/## 📰 其他快訊[\s\S]*?(?=\n## |$)/);
@@ -231,6 +257,14 @@ export default function NewsFeed({ markdown, activeCategory }: NewsFeedProps) {
 
   return (
     <div>
+      {/* Topic count */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+          {filteredTopics.length} topics
+          {activeCategory !== 'all' ? ` in ${activeCategory}` : ''}
+        </span>
+      </div>
+
       {/* Topic Cards */}
       <div className="flex flex-col gap-3">
         {filteredTopics.length > 0 ? (
@@ -246,7 +280,7 @@ export default function NewsFeed({ markdown, activeCategory }: NewsFeedProps) {
         )}
       </div>
 
-      {/* Other News (raw markdown) */}
+      {/* Other News */}
       {activeCategory === 'all' && otherNews && (
         <div className="mt-4 rounded-lg p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
           <span className="text-xs font-bold tracking-wider mb-2 block" style={{ color: 'var(--text-muted)' }}>
@@ -261,7 +295,6 @@ export default function NewsFeed({ markdown, activeCategory }: NewsFeedProps) {
   );
 }
 
-// Minimal markdown renderer for other news section
 function simpleMarkdown(md: string): string {
   return md
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')

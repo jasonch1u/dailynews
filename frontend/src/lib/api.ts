@@ -1,11 +1,30 @@
-// API helper — talks to the Python FastAPI backend
-// In production on Vercel, both frontend and API are on the same domain
-// In development, the API runs on a different port
+// API helper — talks directly to Supabase (no backend needed)
+// Cron script handles scraping + summarization, frontend just reads
 
-import { MOCK_MACRO_SIGNAL, MOCK_SUMMARY, MOCK_DATES } from './mockData';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
+const supabaseHeaders = {
+  'apikey': SUPABASE_ANON_KEY,
+  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+  'Content-Type': 'application/json',
+};
+
+async function supabaseFetch(path: string) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      headers: supabaseHeaders,
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+// ─── Types ───
 
 export interface MacroSignal {
   date: string;
@@ -28,6 +47,22 @@ export interface MacroSignal {
   source: string;
 }
 
+export interface MacroSnapshot {
+  id: number;
+  date: string;
+  sofr: number | null;
+  tga_billion: number | null;
+  vix: number | null;
+  usdjpy: number | null;
+  us10y: number | null;
+  net_liq_billion: number | null;
+  net_liq_weekly_change_pct: number | null;
+  macro_score: number;
+  macro_stance: string;
+  crypto_action: string;
+  triggers: MacroSignal['triggers'];
+}
+
 export interface LiquidityData {
   date: string;
   net_liquidity: number;
@@ -42,119 +77,106 @@ export interface EconomicIndicator {
   value: number;
 }
 
-export async function fetchMacroSignal(refresh = false): Promise<MacroSignal | null> {
-  if (USE_MOCK) return MOCK_MACRO_SIGNAL;
-  try {
-    const res = await fetch(`${API_BASE}/api/macro-signal${refresh ? '?refresh=true' : ''}`, {
-      cache: 'no-store',
-    });
-    if (!res.ok) return MOCK_MACRO_SIGNAL;
-    return await res.json();
-  } catch {
-    return MOCK_MACRO_SIGNAL;
-  }
+export interface Article {
+  id: number;
+  title: string;
+  content: string;
+  source: string;
+  url: string;
+  published_date: string;
+  created_at: string;
+}
+
+// ─── Data Fetchers ───
+
+export async function fetchMacroSignal(): Promise<MacroSignal | null> {
+  // Get latest macro snapshot
+  const data = await supabaseFetch('macro_snapshots?order=date.desc&limit=1');
+  if (!data || data.length === 0) return null;
+  const row = data[0];
+  return {
+    date: row.date,
+    sofr: row.sofr,
+    tga_billion: row.tga_billion,
+    vix: row.vix,
+    usdjpy: row.usdjpy,
+    us10y: row.us10y,
+    net_liq_billion: row.net_liq_billion,
+    net_liq_weekly_change_pct: row.net_liq_weekly_change_pct,
+    macro_score: row.macro_score ?? 0,
+    macro_stance: row.macro_stance ?? 'NEUTRAL',
+    crypto_action: row.crypto_action ?? '',
+    triggers: row.triggers ?? [],
+    source: 'supabase',
+  };
+}
+
+export async function fetchMacroHistory(days: number = 7): Promise<MacroSnapshot[]> {
+  const data = await supabaseFetch(`macro_snapshots?order=date.desc&limit=${days}`);
+  return data ?? [];
 }
 
 export async function fetchLiquidity(): Promise<LiquidityData[]> {
-  try {
-    const res = await fetch(`${API_BASE}/api/liquidity`, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.data || [];
-  } catch {
-    return [];
-  }
+  const data = await supabaseFetch('market_liquidity?order=date.desc&limit=90');
+  return data ?? [];
 }
 
 export async function fetchEconomics(symbol?: string): Promise<EconomicIndicator[]> {
-  try {
-    const url = symbol
-      ? `${API_BASE}/api/economics?symbol=${symbol}`
-      : `${API_BASE}/api/economics`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.data || [];
-  } catch {
-    return [];
-  }
+  const filter = symbol ? `&symbol=eq.${symbol}` : '';
+  const data = await supabaseFetch(`economic_indicators?order=date.desc&limit=500${filter}`);
+  return data ?? [];
 }
 
 export async function fetchHistoryDates(): Promise<string[]> {
-  if (USE_MOCK) return MOCK_DATES;
-  try {
-    const res = await fetch(`${API_BASE}/api/history`, { cache: 'no-store' });
-    if (!res.ok) return MOCK_DATES;
-    const data = await res.json();
-    return data.dates || [];
-  } catch {
-    return MOCK_DATES;
-  }
+  const data = await supabaseFetch('news_summaries?select=date&order=date.desc&limit=30');
+  if (!data) return [];
+  return data.map((r: { date: string }) => r.date);
 }
 
-export interface SummaryResponse {
+export async function fetchSummary(date?: string): Promise<string | null> {
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' });
+  const targetDate = date || today;
+  const data = await supabaseFetch(
+    `news_summaries?date=eq.${targetDate}&select=content&order=version.desc&limit=1`
+  );
+  if (!data || data.length === 0) return null;
+  return data[0].content;
+}
+
+export async function fetchArticles(date: string): Promise<Article[]> {
+  const data = await supabaseFetch(
+    `articles?published_date=eq.${date}&select=id,title,content,source,url,published_date,created_at&order=created_at.desc`
+  );
+  return data ?? [];
+}
+
+// SSE streaming is no longer needed (cron generates summaries)
+// Keep a stub for backward compatibility
+export function streamSummary(
+  onMessage: (data: { markdown?: string; status?: string; step?: number; error?: string }) => void,
+  onError: (err: string) => void,
+  onDone: () => void
+): () => void {
+  // No-op: just fetch the latest summary
+  fetchSummary().then((md) => {
+    if (md) {
+      onMessage({ markdown: md });
+    } else {
+      onMessage({ error: 'No summary available. Wait for the next cron run.' });
+    }
+    onDone();
+  }).catch((e) => {
+    onError(String(e));
+    onDone();
+  });
+  return () => {};
+}
+
+export type SummaryResponse = {
   markdown?: string;
   source?: string;
   date?: string;
   status?: string;
   step?: number;
   error?: string;
-}
-
-export async function fetchSummary(date?: string): Promise<string | null> {
-  if (USE_MOCK) return MOCK_SUMMARY;
-  try {
-    const url = date
-      ? `${API_BASE}/api/summarize?date=${date}`
-      : `${API_BASE}/api/summarize`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return MOCK_SUMMARY;
-    const data = await res.json();
-    return data.markdown || null;
-  } catch {
-    return MOCK_SUMMARY;
-  }
-}
-
-// SSE streaming for live generation
-export function streamSummary(
-  onMessage: (data: SummaryResponse) => void,
-  onError: (err: string) => void,
-  onDone: () => void
-): () => void {
-  const url = `${API_BASE}/api/summarize?refresh=true`;
-  const eventSource = new EventSource(url);
-
-  eventSource.onmessage = (event) => {
-    try {
-      const data: SummaryResponse = JSON.parse(event.data);
-      onMessage(data);
-      if (data.markdown) {
-        eventSource.close();
-        onDone();
-      }
-    } catch {
-      // ignore parse errors
-    }
-  };
-
-  eventSource.onerror = () => {
-    onError('Connection lost');
-    eventSource.close();
-    onDone();
-  };
-
-  // Return cleanup function
-  return () => eventSource.close();
-}
-
-export async function fetchArticles(date: string) {
-  try {
-    const res = await fetch(`${API_BASE}/api/articles?date=${date}`, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.articles || [];
-  } catch {
-    return [];
-  }
-}
+};

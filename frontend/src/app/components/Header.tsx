@@ -29,7 +29,7 @@ export default function Header({ selectedDate, onDateChange, onRefresh, isLoadin
         <div className="flex items-center gap-2">
           <span className="text-lg">📡</span>
           <h1 className="text-sm md:text-base font-bold tracking-wider" style={{ color: 'var(--accent-cyan)' }}>
-            DAILY<span style={{ color: 'var(--text-primary)' }}>NEWS</span>
+            WORLD<span style={{ color: 'var(--text-primary)' }}>MONITOR</span>
           </h1>
         </div>
         <div className="hidden md:flex items-center gap-1.5 px-2 py-0.5 rounded text-xs"
@@ -37,6 +37,10 @@ export default function Header({ selectedDate, onDateChange, onRefresh, isLoadin
           <span className="w-1.5 h-1.5 rounded-full pulse-dot" style={{ background: 'var(--accent-green)' }} />
           <span style={{ color: 'var(--accent-green)' }}>LIVE</span>
         </div>
+        <span className="hidden lg:inline text-[10px] px-2 py-0.5 rounded"
+          style={{ background: 'rgba(168, 85, 247, 0.1)', color: 'var(--accent-purple)', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
+          AI-POWERED
+        </span>
       </div>
 
       {/* Center: Time */}
@@ -64,7 +68,7 @@ export default function Header({ selectedDate, onDateChange, onRefresh, isLoadin
 
         <button
           onClick={onRefresh}
-          disabled={isLoading || !isToday}
+          disabled={isLoading}
           className="text-xs px-3 py-1.5 rounded font-semibold transition-all disabled:opacity-40"
           style={{
             background: isLoading ? 'var(--bg-card)' : 'rgba(0, 212, 255, 0.15)',
@@ -72,7 +76,7 @@ export default function Header({ selectedDate, onDateChange, onRefresh, isLoadin
             color: 'var(--accent-cyan)',
           }}
         >
-          {isLoading ? '⏳ GENERATING...' : '⚡ REFRESH'}
+          {isLoading ? '⏳ LOADING...' : '⚡ REFRESH'}
         </button>
       </div>
     </header>
