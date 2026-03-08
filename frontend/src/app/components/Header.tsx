@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { fetchHistoryDates } from '@/lib/api';
 
 interface HeaderProps {
@@ -13,35 +13,42 @@ interface HeaderProps {
   onSearchSubmit: (query: string) => void;
 }
 
-export default function Header({
-  selectedDate,
-  onDateChange,
-  onRefresh,
-  isLoading,
-  searchQuery,
-  onSearchChange,
-  onSearchSubmit,
-}: HeaderProps) {
+export interface HeaderHandle {
+  focusSearch: () => void;
+}
+
+const Header = forwardRef<HeaderHandle, HeaderProps>(function Header(
+  { selectedDate, onDateChange, onRefresh, isLoading, searchQuery, onSearchChange, onSearchSubmit },
+  ref
+) {
   const [dates, setDates] = useState<string[]>([]);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focusSearch: () => {
+      setMobileSearchOpen(true);
+      setTimeout(() => searchRef.current?.focus(), 50);
+    },
+  }));
 
   useEffect(() => {
     fetchHistoryDates().then(setDates);
   }, []);
 
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' });
-  const isToday = !selectedDate || selectedDate === today;
 
   return (
     <header
       className="fixed top-0 left-0 right-0 z-50"
       style={{ background: 'rgba(10, 10, 15, 0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border)' }}
     >
-      <div className="h-14 flex items-center justify-between px-4 md:px-6">
-        {/* Left: Logo + Title */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">📡</span>
-            <h1 className="text-sm md:text-base font-bold tracking-wider" style={{ color: 'var(--accent-cyan)' }}>
+      <div className="h-14 flex items-center justify-between px-3 md:px-6">
+        {/* Left: Logo */}
+        <div className="flex items-center gap-2 md:gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 md:gap-2">
+            <span className="text-base md:text-lg">📡</span>
+            <h1 className="text-xs md:text-base font-bold tracking-wider" style={{ color: 'var(--accent-cyan)' }}>
               WORLD<span style={{ color: 'var(--text-primary)' }}>MONITOR</span>
             </h1>
           </div>
@@ -56,17 +63,30 @@ export default function Header({
           </span>
         </div>
 
-        {/* Center: Time */}
-        <div className="hidden md:block text-xs tracking-widest" style={{ color: 'var(--text-muted)' }}>
+        {/* Center: Time (desktop only) */}
+        <div className="hidden lg:block text-xs tracking-widest" style={{ color: 'var(--text-muted)' }}>
           <LiveClock />
         </div>
 
         {/* Right: Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 md:gap-2">
+          {/* Mobile search toggle */}
+          <button
+            onClick={() => {
+              setMobileSearchOpen(!mobileSearchOpen);
+              if (!mobileSearchOpen) setTimeout(() => searchRef.current?.focus(), 50);
+            }}
+            className="md:hidden text-xs px-2 py-1.5 rounded"
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+            aria-label="Toggle search"
+          >
+            🔎
+          </button>
+
           <select
             value={selectedDate || today}
             onChange={(e) => onDateChange(e.target.value === today ? '' : e.target.value)}
-            className="text-xs px-2 py-1.5 rounded cursor-pointer"
+            className="text-[11px] md:text-xs px-1.5 md:px-2 py-1.5 rounded cursor-pointer"
             style={{
               background: 'var(--bg-card)',
               border: '1px solid var(--border)',
@@ -82,19 +102,21 @@ export default function Header({
           <button
             onClick={onRefresh}
             disabled={isLoading}
-            className="text-xs px-3 py-1.5 rounded font-semibold transition-all disabled:opacity-40"
+            className="text-[11px] md:text-xs px-2 md:px-3 py-1.5 rounded font-semibold transition-all disabled:opacity-40"
             style={{
               background: isLoading ? 'var(--bg-card)' : 'rgba(0, 212, 255, 0.15)',
               border: '1px solid var(--accent-cyan)',
               color: 'var(--accent-cyan)',
             }}
           >
-            {isLoading ? '⏳ LOADING...' : '⚡ REFRESH'}
+            {isLoading ? '⏳' : '⚡'}
+            <span className="hidden sm:inline"> {isLoading ? 'LOADING...' : 'REFRESH'}</span>
           </button>
         </div>
       </div>
 
-      <div className="px-4 md:px-6 pb-3">
+      {/* Search bar — always visible on desktop, toggle on mobile */}
+      <div className={`px-3 md:px-6 pb-3 ${mobileSearchOpen ? 'block' : 'hidden md:block'}`}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -108,18 +130,25 @@ export default function Header({
           >
             <span className="text-sm" style={{ color: 'var(--text-muted)' }}>🔎</span>
             <input
+              ref={searchRef}
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search title + content (press Enter for Supabase search)"
+              placeholder="Search news..."
               className="w-full text-xs bg-transparent outline-none"
               style={{ color: 'var(--text-primary)' }}
             />
+            <kbd className="hidden md:inline-flex text-[9px] px-1.5 py-0.5 rounded items-center"
+              style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+              /
+            </kbd>
           </label>
         </form>
       </div>
     </header>
   );
-}
+});
+
+export default Header;
 
 function LiveClock() {
   const [time, setTime] = useState('');

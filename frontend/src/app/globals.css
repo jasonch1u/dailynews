@@ -103,12 +103,17 @@ body {
 }
 .pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
 
-/* Ticker animation */
+/* Ticker animation — translateX(-50%) because we duplicate the text */
 @keyframes ticker-scroll {
-  0% { transform: translateX(100%); }
-  100% { transform: translateX(-100%); }
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
-.ticker-scroll { animation: ticker-scroll 30s linear infinite; }
+.ticker-scroll { animation: ticker-scroll 40s linear infinite; }
+
+/* Safe area for notched phones */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+}
 
 /* Card hover */
 .card-hover {

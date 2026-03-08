@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 interface GeoMapProps {
   markdown: string | null;
@@ -77,19 +77,28 @@ function buildMarkers(markdown: string | null): Marker[] {
 
 export default function GeoMap({ markdown }: GeoMapProps) {
   const markers = useMemo(() => buildMarkers(markdown), [markdown]);
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <section className="rounded-lg p-4 mb-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between mb-2">
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="flex items-center justify-between mb-2 w-full text-left"
+      >
         <span className="text-xs font-bold tracking-wider" style={{ color: 'var(--accent-red)' }}>
           🌍 GEOPOLITICAL EVENT MAP
         </span>
-        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-          {markers.length} hotspots
-        </span>
-      </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            {markers.length} hotspots
+          </span>
+          <span className="text-[10px] transition-transform" style={{ color: 'var(--text-muted)', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0)' }}>
+            ▼
+          </span>
+        </div>
+      </button>
 
-      <div className="rounded p-2" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>
+      <div className={`${collapsed ? 'hidden' : 'block'} rounded p-2`} style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>
         <svg viewBox="0 0 1000 480" className="w-full h-auto" role="img" aria-label="Geopolitical event map">
           <defs>
             <linearGradient id="wm-ocean" x1="0" y1="0" x2="1" y2="1">
@@ -128,7 +137,7 @@ export default function GeoMap({ markdown }: GeoMapProps) {
         </svg>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-1.5">
+      <div className={`${collapsed ? 'hidden' : 'flex'} mt-2 flex-wrap gap-1.5`}>
         {markers.slice(0, 8).map((marker) => (
           <span
             key={marker.key}

@@ -17,6 +17,18 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "WorldMonitor",
   },
+  openGraph: {
+    title: "WORLDMONITOR — AI Market Intelligence",
+    description: "Real-time AI-powered macro signals, geopolitical radar, and news aggregation.",
+    type: "website",
+    locale: "zh_TW",
+    siteName: "WorldMonitor",
+  },
+  twitter: {
+    card: "summary",
+    title: "WORLDMONITOR",
+    description: "AI-powered market intelligence dashboard",
+  },
 };
 
 export const viewport: Viewport = {

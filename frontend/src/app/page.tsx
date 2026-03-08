@@ -1,14 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import Header from './components/Header';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import Header, { type HeaderHandle } from './components/Header';
 import MarketRadar from './components/MarketRadar';
 import AIBrief from './components/AIBrief';
 import NewsFeed, { CategoryTabs } from './components/NewsFeed';
 import SectorView from './components/SectorView';
 import BreakingTicker from './components/BreakingTicker';
 import GeoMap from './components/GeoMap';
-import { fetchSummary, searchArticles, type Article, type SummaryResponse } from '@/lib/api';
+import { fetchSummary, searchArticles, type Article } from '@/lib/api';
+import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
 
 const SOURCES = [
   { name: 'Reuters', icon: '🌐', tier: 1 },
@@ -39,11 +40,15 @@ export default function Dashboard() {
   const [serverSearchResults, setServerSearchResults] = useState<Article[]>([]);
   const [isServerSearching, setIsServerSearching] = useState(false);
 
+  const headerRef = useRef<HeaderHandle>(null);
+
+  // Debounce search query
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [searchQuery]);
 
+  // Initial load
   useEffect(() => {
     loadSummary();
   }, []);
@@ -91,9 +96,21 @@ export default function Dashboard() {
     setIsServerSearching(false);
   }, []);
 
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onSearch: () => headerRef.current?.focusSearch(),
+    onRefresh: handleRefresh,
+    onCategoryChange: setActiveCategory,
+    onEscape: () => {
+      setSearchQuery('');
+      setServerSearchResults([]);
+    },
+  });
+
   return (
     <div className="min-h-screen pb-10" style={{ background: 'var(--bg-primary)' }}>
       <Header
+        ref={headerRef}
         selectedDate={selectedDate}
         onDateChange={handleDateChange}
         onRefresh={handleRefresh}
@@ -103,13 +120,12 @@ export default function Dashboard() {
         onSearchSubmit={handleServerSearch}
       />
 
-      {/* Main Content */}
-      <main className="pt-30 px-3 md:px-6 max-w-[1600px] mx-auto">
+      {/* Main Content — pt-[7.5rem] accounts for fixed header + search bar */}
+      <main className="pt-[7.5rem] px-3 md:px-6 max-w-[1600px] mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
 
           {/* Left Column: News */}
           <div className="min-w-0">
-            {/* AI Brief */}
             <AIBrief
               markdown={markdown}
               isLoading={isLoading}
@@ -117,13 +133,10 @@ export default function Dashboard() {
               loadingStep={loadingStep}
             />
 
-            {/* Geopolitical Event Map */}
             <GeoMap markdown={markdown} />
 
-            {/* Category Tabs */}
             <CategoryTabs active={activeCategory} onChange={setActiveCategory} />
 
-            {/* News Feed */}
             <NewsFeed
               markdown={markdown}
               activeCategory={activeCategory}
@@ -135,10 +148,7 @@ export default function Dashboard() {
 
           {/* Right Column: Sidebar */}
           <div className="flex flex-col gap-4">
-            {/* Market Radar */}
             <MarketRadar />
-
-            {/* Sector View */}
             <SectorView markdown={markdown} />
 
             {/* Sources Panel */}
@@ -147,7 +157,6 @@ export default function Dashboard() {
                 📡 INTELLIGENCE SOURCES
               </span>
 
-              {/* Tier 1 — Tier 1 sources */}
               <div className="mb-2">
                 <span className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--accent-yellow)' }}>
                   ★★★ TIER 1
@@ -201,11 +210,27 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
+
+            {/* Keyboard Shortcuts Help (desktop only) */}
+            <div className="hidden lg:block rounded-lg p-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+              <span className="text-[10px] font-bold tracking-wider mb-2 block" style={{ color: 'var(--text-muted)' }}>
+                ⌨️ SHORTCUTS
+              </span>
+              <div className="grid grid-cols-2 gap-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                <span><kbd className="px-1 rounded" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>/</kbd> Search</span>
+                <span><kbd className="px-1 rounded" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>r</kbd> Refresh</span>
+                <span><kbd className="px-1 rounded" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>0</kbd> All</span>
+                <span><kbd className="px-1 rounded" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>1</kbd> Crypto</span>
+                <span><kbd className="px-1 rounded" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>2</kbd> Macro</span>
+                <span><kbd className="px-1 rounded" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>3</kbd> Tech</span>
+                <span><kbd className="px-1 rounded" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>4</kbd> Geo</span>
+                <span><kbd className="px-1 rounded" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>Esc</kbd> Clear</span>
+              </div>
+            </div>
           </div>
         </div>
       </main>
 
-      {/* Breaking Ticker */}
       <BreakingTicker markdown={markdown} />
     </div>
   );

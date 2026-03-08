@@ -9,7 +9,6 @@ interface BreakingTickerProps {
 export default function BreakingTicker({ markdown }: BreakingTickerProps) {
   const headlines = useMemo(() => {
     if (!markdown) return [];
-    // Extract topic titles
     const titleRegex = /### \d+\.\s*(?:\[[^\]]+\]\s*)?(.+)/g;
     const titles: string[] = [];
     let match;
@@ -21,10 +20,11 @@ export default function BreakingTicker({ markdown }: BreakingTickerProps) {
 
   if (headlines.length === 0) return null;
 
-  const tickerText = headlines.map((h, i) => `${h}  ◆  `).join('');
+  // Duplicate text for seamless loop (CSS translateX(-50%) loops back)
+  const tickerText = headlines.map((h) => `${h}  ◆  `).join('');
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 h-8 flex items-center overflow-hidden"
+    <div className="fixed bottom-0 left-0 right-0 z-50 h-8 flex items-center overflow-hidden safe-bottom"
       style={{
         background: 'rgba(10, 10, 15, 0.95)',
         borderTop: '1px solid var(--border)',
@@ -37,7 +37,7 @@ export default function BreakingTicker({ markdown }: BreakingTickerProps) {
         <span className="text-[10px] font-bold tracking-wider text-white">BREAKING</span>
       </div>
 
-      {/* Scrolling text */}
+      {/* Seamless scrolling text */}
       <div className="flex-1 overflow-hidden whitespace-nowrap">
         <span className="inline-block ticker-scroll text-[11px]"
           style={{ color: 'var(--text-secondary)' }}>
