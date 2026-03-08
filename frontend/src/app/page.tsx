@@ -7,7 +7,8 @@ import AIBrief from './components/AIBrief';
 import NewsFeed, { CategoryTabs } from './components/NewsFeed';
 import SectorView from './components/SectorView';
 import BreakingTicker from './components/BreakingTicker';
-import { fetchSummary, type SummaryResponse } from '@/lib/api';
+import GeoMap from './components/GeoMap';
+import { fetchSummary, searchArticles, type Article, type SummaryResponse } from '@/lib/api';
 
 const SOURCES = [
   { name: 'Reuters', icon: '🌐', tier: 1 },
@@ -33,6 +34,15 @@ export default function Dashboard() {
   const [loadingStep, setLoadingStep] = useState(0);
   const [activeCategory, setActiveCategory] = useState('all');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [serverSearchResults, setServerSearchResults] = useState<Article[]>([]);
+  const [isServerSearching, setIsServerSearching] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     loadSummary();
@@ -69,6 +79,18 @@ export default function Dashboard() {
     loadSummary(selectedDate || undefined);
   }, [selectedDate, loadSummary]);
 
+  const handleServerSearch = useCallback(async (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setServerSearchResults([]);
+      return;
+    }
+    setIsServerSearching(true);
+    const results = await searchArticles(trimmed);
+    setServerSearchResults(results);
+    setIsServerSearching(false);
+  }, []);
+
   return (
     <div className="min-h-screen pb-10" style={{ background: 'var(--bg-primary)' }}>
       <Header
@@ -76,10 +98,13 @@ export default function Dashboard() {
         onDateChange={handleDateChange}
         onRefresh={handleRefresh}
         isLoading={isLoading}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onSearchSubmit={handleServerSearch}
       />
 
       {/* Main Content */}
-      <main className="pt-16 px-3 md:px-6 max-w-[1600px] mx-auto">
+      <main className="pt-30 px-3 md:px-6 max-w-[1600px] mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
 
           {/* Left Column: News */}
@@ -92,11 +117,20 @@ export default function Dashboard() {
               loadingStep={loadingStep}
             />
 
+            {/* Geopolitical Event Map */}
+            <GeoMap markdown={markdown} />
+
             {/* Category Tabs */}
             <CategoryTabs active={activeCategory} onChange={setActiveCategory} />
 
             {/* News Feed */}
-            <NewsFeed markdown={markdown} activeCategory={activeCategory} />
+            <NewsFeed
+              markdown={markdown}
+              activeCategory={activeCategory}
+              searchQuery={debouncedSearchQuery}
+              serverSearchResults={serverSearchResults}
+              isServerSearching={isServerSearching}
+            />
           </div>
 
           {/* Right Column: Sidebar */}

@@ -1,10 +1,14 @@
 'use client';
 
+import type { Article } from '@/lib/api';
 import { useMemo } from 'react';
 
 interface NewsFeedProps {
   markdown: string | null;
   activeCategory: string;
+  searchQuery: string;
+  serverSearchResults: Article[];
+  isServerSearching: boolean;
 }
 
 // Source metadata with colors, reliability, and favicon
@@ -228,13 +232,26 @@ export function CategoryTabs({ active, onChange }: { active: string; onChange: (
   );
 }
 
-export default function NewsFeed({ markdown, activeCategory }: NewsFeedProps) {
+export default function NewsFeed({
+  markdown,
+  activeCategory,
+  searchQuery,
+  serverSearchResults,
+  isServerSearching,
+}: NewsFeedProps) {
   const topics = useMemo(() => markdown ? parseTopics(markdown) : [], [markdown]);
 
   const filteredTopics = useMemo(() => {
-    if (activeCategory === 'all') return topics;
-    return topics.filter(t => t.category === activeCategory);
-  }, [topics, activeCategory]);
+    const categoryFiltered = activeCategory === 'all'
+      ? topics
+      : topics.filter((t) => t.category === activeCategory);
+
+    if (!searchQuery) return categoryFiltered;
+    const lower = searchQuery.toLowerCase();
+    return categoryFiltered.filter((t) =>
+      `${t.title} ${t.content}`.toLowerCase().includes(lower)
+    );
+  }, [topics, activeCategory, searchQuery]);
 
   const otherNews = useMemo(() => {
     if (!markdown) return '';
@@ -262,6 +279,7 @@ export default function NewsFeed({ markdown, activeCategory }: NewsFeedProps) {
         <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
           {filteredTopics.length} topics
           {activeCategory !== 'all' ? ` in ${activeCategory}` : ''}
+          {searchQuery ? ` · filter "${searchQuery}"` : ''}
         </span>
       </div>
 
@@ -279,6 +297,41 @@ export default function NewsFeed({ markdown, activeCategory }: NewsFeedProps) {
           </div>
         )}
       </div>
+
+      {searchQuery && (
+        <div className="mt-4 rounded-lg p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+          <span className="text-xs font-bold tracking-wider mb-2 block" style={{ color: 'var(--accent-cyan)' }}>
+            🔍 SUPABASE SEARCH
+          </span>
+          {isServerSearching && (
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Searching...
+            </p>
+          )}
+          {!isServerSearching && serverSearchResults.length === 0 && (
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Press Enter in search bar to run server-side search.
+            </p>
+          )}
+          {!isServerSearching && serverSearchResults.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {serverSearchResults.slice(0, 8).map((item) => (
+                <a
+                  key={item.id}
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block rounded p-2 transition-colors"
+                  style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}
+                >
+                  <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{item.title}</p>
+                  <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{item.source}</p>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Other News */}
       {activeCategory === 'all' && otherNews && (

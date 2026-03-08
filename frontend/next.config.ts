@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Allow LAN access during development without cross-origin warnings for /_next/*
+  allowedDevOrigins: ["*.*.*.*", "*.localhost", "localhost"],
   // Proxy API calls to the Python backend in development
   async rewrites() {
     return [

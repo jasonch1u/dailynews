@@ -150,6 +150,24 @@ export async function fetchArticles(date: string): Promise<Article[]> {
   return data ?? [];
 }
 
+export async function searchArticles(query: string): Promise<Article[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  // REST filter prepares frontend for future semantic/vector search entry point.
+  const escaped = trimmed.replace(/[%*]/g, '');
+  const ilike = `*${escaped}*`;
+  const params = new URLSearchParams({
+    select: 'id,title,content,source,url,published_date,created_at',
+    or: `(title.ilike.${ilike},content.ilike.${ilike})`,
+    order: 'created_at.desc',
+    limit: '40',
+  });
+
+  const data = await supabaseFetch(`articles?${params.toString()}`);
+  return data ?? [];
+}
+
 // SSE streaming is no longer needed (cron generates summaries)
 // Keep a stub for backward compatibility
 export function streamSummary(
