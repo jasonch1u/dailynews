@@ -10,7 +10,7 @@ async def call_gemini(prompt: str, api_key: str):
     # (User requested 'gemini-3-flash-preview', but sticking to known valid identifier or what user explicitly wants)
     # The user was VERY specific: "gemini-3-flash-preview". I will use that.
     # Note: If this model doesn't exist, it will return 404/400 error.
-    model_name = "gemini-3-flash-preview"
+    model_name = "gemini-3.1-flash-lite"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
     payload = {"contents": [{"parts": [{"text": prompt}]}]}

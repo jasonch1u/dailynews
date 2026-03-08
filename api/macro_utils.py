@@ -1,16 +1,33 @@
 """
 api/macro_utils.py
-宏觀流動性監控模組 — XinGPT Skill 4 實作
+宏觀流動性監控模組
+
+方法論基礎：
+- Lyn Alden (2024) "Bitcoin: A Global Liquidity Barometer"
+  - BTC 與全球流動性的 12 個月方向相關性達 83%，高於所有主要資產類別
+  - 全球 M2（美元計價）是最佳流動性代理指標
+  - 短期偏離可能由鏈上估值極端或特殊事件導致
+- Arthur Hayes: Net Liquidity = Fed Balance Sheet (WALCL) - TGA - ON RRP
+  - TGA 下降 = 財政部支出 = 流動性注入
+  - RRP 下降 = 資金從 Fed 回流市場
+- Michael Howell (Cross Border Capital): 全球央行資產負債表驅動風險資產價格
+
+指標說明：
+  Net Liquidity | WALCL-TGA-RRP | 週更 | 83% 方向相關(12M) | ★★★ Lyn Alden
+  VIX           | Yahoo/FRED    | 即時 | 恐慌→拋售風險資產  | ★★ 通用風險指標
+  SOFR          | NY Fed        | 日更 | 高利率→融資壓力    | ★★ Pozsar 框架
+  USDJPY        | Yahoo         | 即時 | 套利平倉→賣壓      | ★★ 2024/8 實證
+  US10Y         | Yahoo         | 即時 | 高殖利率→資金流出  | ★☆ 間接影響
+  M2 YoY        | FRED          | 週更 | 擴張→風險資產上漲  | ★★★ Lyn Alden 核心
+  10Y-2Y Spread | FRED          | 日更 | 倒掛→衰退預期      | ★☆ 長期指標
+  DXY           | FRED          | 日更 | 美元弱→全球流動性升 | ★★ Lyn Alden 框架
 
 資料源（免費 + 即時）：
 - SOFR: NY Fed API（日更，比 FRED 快）
 - TGA: Fiscal Data Treasury API（日更，比 FRED WDTGAL 快）
 - VIX / USDJPY / US10Y: Yahoo Finance（盤中即時）
 - WALCL / RRP: 仍從 FRED 讀（週更，無法加速）
-
-信號邏輯來自 XinGPT：
-- 淨流動性 = Fed 總資產 - TGA - ON RRP
-- 觸發：週降 > 5% / SOFR > 5.5% / VIX > 25 + USDJPY 急升
+- M1 / M2 / 10Y-2Y / DXY: FRED（日/週更）
 """
 
 from __future__ import annotations
@@ -50,7 +67,7 @@ def get_sofr() -> Optional[Dict]:
     Updates: next business day after market close (~08:00 ET).
     Returns: {"date": "2026-02-24", "rate": 4.30}
     """
-    url = "https://markets.newyorkfed.org/api/rates/sofr/last/1.json"
+    url = "https://markets.newyorkfed.org/api/rates/secured/sofr/last/1.json"
     data = _get(url)
     if not data:
         return None
@@ -69,12 +86,12 @@ def get_tga_daily() -> Optional[Dict]:
     Returns: {"date": "2026-02-24", "balance_billion": 823.4}
     """
     url = (
-        "https://fiscaldata.treasury.gov/api/data/daily-treasury-statement"
-        "/operating_cash_balance/"
+        "https://api.fiscaldata.treasury.gov/services/api/fiscal_service"
+        "/v1/accounting/dts/operating_cash_balance"
     )
     params = {
-        "fields": "record_date,open_today_bal",
-        "filter": "account_type:eq:Federal Reserve Account",
+        "fields": "record_date,open_today_bal,account_type",
+        "filter": "account_type:eq:Treasury General Account (TGA) Opening Balance",
         "sort": "-record_date",
         "page[size]": "3",
     }

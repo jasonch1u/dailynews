@@ -25,6 +25,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 sys.path.insert(0, os.path.dirname(__file__))
 from scrapers import run_all_scrapers
 from api.db import SupabaseClient
+from api.fred_utils import FredClient
 from api.llm_utils import generate_daily_summary
 from api.macro_utils import build_macro_snapshot, compute_macro_signal, get_yahoo_price_history
 
@@ -157,10 +158,33 @@ async def scrape_and_summarize(db: SupabaseClient, sources: list = None):
         return None
 
 
+async def update_fred(db: SupabaseClient):
+    """Fetch FRED economic data (WALCL, RRP, M1, M2, VIX, 10Y2Y, DXY) and save to DB."""
+    fred = FredClient(db)
+    if not fred.api_key:
+        print("[FRED] ⚠️ FRED_API_KEY not set, skipping")
+        return
+
+    print("[FRED] Updating market liquidity (WALCL/TGA/RRP)...")
+    try:
+        liq_result = await fred.update_market_liquidity()
+        print(f"[FRED] Liquidity: {liq_result}")
+    except Exception as e:
+        print(f"[FRED] Liquidity error: {e}")
+
+    print("[FRED] Updating economic indicators (VIX/M1/M2/10Y2Y/DXY)...")
+    try:
+        eco_result = await fred.update_economic_indicators()
+        print(f"[FRED] Indicators: {eco_result}")
+    except Exception as e:
+        print(f"[FRED] Indicators error: {e}")
+
+
 async def main():
     parser = argparse.ArgumentParser(description='DailyNews Cron Scraper')
     parser.add_argument('--macro', action='store_true', help='Only update macro signal')
     parser.add_argument('--summary', action='store_true', help='Only regenerate summary')
+    parser.add_argument('--fred', action='store_true', help='Only update FRED data')
     args = parser.parse_args()
 
     db = SupabaseClient()
@@ -172,8 +196,11 @@ async def main():
         await update_macro(db)
     elif args.summary:
         await scrape_and_summarize(db)
+    elif args.fred:
+        await update_fred(db)
     else:
-        # Full run: macro + scrape + summarize
+        # Full run: FRED + macro + scrape + summarize
+        await update_fred(db)
         await update_macro(db)
         await scrape_and_summarize(db)
 
