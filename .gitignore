@@ -1,5 +1,6 @@
 # 忽略環境變數設定檔 (保護 API Key)
 .env
+.env.local
 
 # 忽略 Python 編譯檔與快取
 __pycache__/
@@ -7,3 +8,9 @@ __pycache__/
 
 # 虛擬環境
 venv/
+
+# Node.js / Next.js
+node_modules/
+frontend/.next/
+frontend/node_modules/
+.vercel
