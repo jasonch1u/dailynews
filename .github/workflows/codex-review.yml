@@ -12,12 +12,29 @@ jobs:
     outputs:
       final_message: ${{ steps.run_codex.outputs.final-message }}
     steps:
+      # Gracefully no-op when the OPENAI_API_KEY secret is not configured
+      # (e.g. on forks or before the maintainer has Codex access). This keeps
+      # the check green instead of failing every pull request.
+      - name: Check for OpenAI API key
+        id: guard
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::OPENAI_API_KEY not set — skipping Codex review."
+          else
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v5
+        if: steps.guard.outputs.has_key == 'true'
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
           persist-credentials: false
 
       - name: Pre-fetch base and head refs
+        if: steps.guard.outputs.has_key == 'true'
         env:
           PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -28,6 +45,7 @@ jobs:
 
       - name: Run Codex
         id: run_codex
+        if: steps.guard.outputs.has_key == 'true'
         uses: openai/codex-action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
