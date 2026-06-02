@@ -6,9 +6,9 @@ import os
 import asyncio
 import json
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+from typing import Optional
 from dotenv import load_dotenv
-from api.llm_utils import translate_text, generate_daily_summary
+from api.llm_utils import generate_daily_summary
 from scrapers import run_all_scrapers
 from api.templates import HTML_CONTENT
 from api.db import SupabaseClient

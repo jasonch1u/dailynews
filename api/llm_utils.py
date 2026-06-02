@@ -1,6 +1,4 @@
 import aiohttp
-import os
-import json
 
 async def call_gemini(prompt: str, api_key: str):
     """Generic function to call Gemini API"""

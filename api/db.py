@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import aiohttp
 import os
-import json
 from typing import Dict, List, Optional
 
 class SupabaseClient:
@@ -286,7 +285,6 @@ class SupabaseClient:
         headers = self.headers.copy()
         headers["Prefer"] = "resolution=merge-duplicates"
 
-        import json as _json
         payload = snapshot.copy()
         # Supabase expects JSONB fields as actual JSON strings or dicts
         for field in ("triggers", "raw_data"):
