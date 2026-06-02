@@ -1,6 +1,18 @@
 # DailyNews - AI-Powered Global Financial News Digest
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/jasonch1u/dailynews/actions/workflows/ci.yml/badge.svg)](https://github.com/jasonch1u/dailynews/actions/workflows/ci.yml)
+[![Codex review](https://img.shields.io/badge/PR%20review-Codex-black)](https://developers.openai.com/codex/)
+[![Made with Python](https://img.shields.io/badge/Made%20with-Python-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000.svg?logo=vercel)](https://vercel.com/)
+
 每日自動抓取全球財經新聞，透過 Gemini AI 生成繁體中文市場摘要報告，並提供宏觀經濟指標監控。
+
+> **🚀 Self-hostable** — deploy your own instance to Vercel in minutes (see
+> [Quick Start](#quick-start)). All you need is a free Supabase project and
+> Gemini / FRED API keys.
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fjasonch1u%2Fdailynews&env=SUPABASE_URL,SUPABASE_KEY,GEMINI_API_KEY,FRED_API_KEY)
 
 ## Features
 
@@ -151,6 +163,27 @@ dailynews/
     └── favicon.ico
 ```
 
+## Development with Codex
+
+This project is built for AI-assisted maintenance:
+
+- [`AGENTS.md`](AGENTS.md) documents the architectural rules that coding agents
+  (including [OpenAI Codex](https://developers.openai.com/codex/)) must follow when
+  changing the summarization pipeline.
+- Every pull request is automatically reviewed by Codex via
+  [`.github/workflows/codex-review.yml`](.github/workflows/codex-review.yml) (powered
+  by [`openai/codex-action`](https://github.com/openai/codex-action)), which checks
+  correctness, scraper resilience, secret leakage, and Vercel timeout constraints.
+  Review criteria live in [`.github/codex/prompts/review.md`](.github/codex/prompts/review.md).
+
+To enable Codex review on a fork, add an `OPENAI_API_KEY` repository secret.
+
+## Contributing
+
+Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) and our
+[Code of Conduct](CODE_OF_CONDUCT.md). For security issues, see
+[`SECURITY.md`](SECURITY.md).
+
 ## License
 
-MIT
+Released under the [MIT License](LICENSE).
