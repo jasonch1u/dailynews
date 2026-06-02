@@ -233,7 +233,9 @@ async def summarize_news_endpoint(
                  # Try fallback to cache
                  cached = await db.get_summary_by_date(today_str)
                  if cached:
-                     yield f"data: {json.dumps({'markdown': cached + '\n\n(註：最新嘗試抓取未獲得新文章，顯示庫存摘要)', 'source': 'cache_fallback', 'date': today_str})}\n\n"
+                     fallback_note = "\n\n(註：最新嘗試抓取未獲得新文章，顯示庫存摘要)"
+                     payload = json.dumps({'markdown': cached + fallback_note, 'source': 'cache_fallback', 'date': today_str})
+                     yield f"data: {payload}\n\n"
                      return
 
                  yield f"data: {json.dumps({'markdown': '⚠️ 今日尚未有符合條件的新聞 (且無歷史存檔)。', 'date': today_str})}\n\n"
