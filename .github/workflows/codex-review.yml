@@ -27,7 +27,7 @@ jobs:
             echo "has_key=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         if: steps.guard.outputs.has_key == 'true'
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
